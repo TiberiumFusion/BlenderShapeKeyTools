@@ -177,7 +177,7 @@ class WM_OT_ShapeKeySplitter_OpMergeAllPairs(bpy.types.Operator):
 		
 
 class OBJECT_PT_ShapeKeySplitter_Panel(bpy.types.Panel):
-	bl_label = "Shape Key Spliiter"
+	bl_label = "Shape Key Splitter"
 	bl_idname = "OBJECT_PT_custom_panel"
 	bl_space_type = "VIEW_3D" 
 	bl_region_type = "TOOLS"
