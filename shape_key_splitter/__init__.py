@@ -1,7 +1,7 @@
 bl_info = {
 	"name": "Shape Key Splitter",
 	"author": "TiberiumFusion",  
-	"version": (1, 0, 0, 0),
+	"version": (1, 0, 0, 1),
 	"blender": (2, 78, 0),
 	"location": "Object > Tools > Shape Key Splitter",
 	"description": "Splits and merges shape keys on axis boundaries. Useful for separating and combining the left and right halves of expressions.",
@@ -178,7 +178,7 @@ class WM_OT_ShapeKeySplitter_OpMergeAllPairs(bpy.types.Operator):
 
 class OBJECT_PT_ShapeKeySplitter_Panel(bpy.types.Panel):
 	bl_label = "Shape Key Splitter"
-	bl_idname = "OBJECT_PT_custom_panel"
+	bl_idname = "OBJECT_PT_shape_key_splitter_panel"
 	bl_space_type = "VIEW_3D" 
 	bl_region_type = "TOOLS"
 	bl_category = "Tools"
