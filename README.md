@@ -15,7 +15,7 @@ Split and merge shape key pairs, using a `MyShapeKeyL` `MyShapeKeyR` naming conv
 ![Demo2 gif](https://github.com/TiberiumFusion/BlenderShapeKeyTools/blob/master/demovids/demo2.gif)
 
 
-## Combine Shape Keys
+## Combine shape keys
 Combine two shapes keys together with a variety of Photoshop-like blending modes and vertex filtering options.
 * Useful when you don't want to fuss with the shape key panel and "New Shape Key From Mix", or when Blender's only ability to additively blend all verts is not desirable.
 * Blend modes: `add`, `subtract`, `multiply`, `divide`, `overwrite`, `lerp`
@@ -24,7 +24,7 @@ Combine two shapes keys together with a variety of Photoshop-like blending modes
 ![Demo3 gif](https://github.com/TiberiumFusion/BlenderShapeKeyTools/blob/master/demovids/demo3.gif)
 
 
-## Split Shape Keys
+## Split shape keys
 Split off a new shape key from an existing shape key, using various options to filter the result on a per-vertex basis.
 * Useful for extracting a specific part of a shape key
 * Vertex filtering "masks" which verts are split off, using the shape key's characteristics or the model's vertex groups.
