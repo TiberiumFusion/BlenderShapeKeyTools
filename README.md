@@ -4,7 +4,7 @@ Some basic tools for manipulating shape keys beyond Blender's limited abilities.
 "Officially" compatible with Blender 2.79, but it should work on older versions (possibly up to 2.75).
 
 ## Split & Merge Shape Key Pairs
-Split and merge shape key pairs, using a `MyShapeKeyL` `MyShapeKeyR` naming convention.
+Split and merge shape key pairs, using a `MyShapeKeyL+MyShapeKeyR` naming convention.
 * Useful for separating and combining the left and right halves of expressions, such as eyebrow, eye, and mouth shapes.
 * Choose the world axis that defines the "left" and "right" sides of the model.
 
