@@ -1,8 +1,42 @@
-import sys, bpy
+# ////////////////////////////////////////////////////////////////////////////////////////////////////
+# //
+# //    Common Methods
+# //    - Things that are used by multiple Operators/Panels/whatever
+# //
+# ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+import sys, os
+import bpy
+
 
 #
 #====================================================================================================
-#    Common
+#    Names
+#====================================================================================================
+#
+
+### Validates the provided shape key name as non-existent and modifies it with Blender's .001, .002, etc styling if it does exist
+def ValidateShapeKeyName(obj, name):		
+	if (not hasattr(obj.data.shape_keys, "key_blocks") or len(obj.data.shape_keys.key_blocks.keys()) == 0): # no shape keys
+		return name, 0
+	else:
+		newName = name
+		conflict = (newName in obj.data.shape_keys.key_blocks.keys())
+		numConflicts = 0
+		while (conflict):
+			numConflicts += 1
+			if (numConflicts <= 999):
+				newName = name + "." + "{:03d}".format(numConflicts)
+			else:
+				newName = name + "." + str(numConflicts)
+			conflict = (newName in obj.data.shape_keys.key_blocks.keys())
+		return newName
+
+
+
+#
+#====================================================================================================
+#    Vertex Filtering
 #====================================================================================================
 #
 
@@ -38,7 +72,9 @@ def CreateVertexFilterKernel(params):
 #
 
 ### Given an existing shape key, determines the new names if this shape key was to be split into L and R halves
-def FindShapeKeySplitNames(originalShapeKeyName):
+# If validateWith = any object, the new names will be validated (and adjusted) for conflicts with existing shape keys
+# If validateWith = None, the ideal new names will be returned without modification
+def FindShapeKeyPairSplitNames(originalShapeKeyName, validateWith=True):
 	newLeftName = None
 	newRightName = None
 	usesPairNameConvention = False
@@ -52,14 +88,20 @@ def FindShapeKeySplitNames(originalShapeKeyName):
 			newLeftName = nameCuts[1]
 			newRightName = nameCuts[0]
 			usesPairNameConvention = True
-		else:
-			raise Exception("Shape key \"" + originalShapeKeyName + "\" appears to use pair name convention (e.g. MyKeyL+MyKeyR), but it does not have both the 'L' and 'R' key characters in its name.")
+		else: # shape key name has a + in it, but the string halves on either side of that + do not end in L and R
+			newLeftName = originalShapeKeyName + "L"
+			newRightName = originalShapeKeyName + "R"
+			usesPairNameConvention = False
 	else:
 		newLeftName = originalShapeKeyName + "L"
 		newRightName = originalShapeKeyName + "R"
 		usesPairNameConvention = False
 	
-	return [newLeftName, newRightName, usesPairNameConvention]
+	if (validateWith):
+		newLeftName = ValidateShapeKeyName(validateWith, newLeftName)
+		newRightName = ValidateShapeKeyName(validateWith, newRightName)
+	
+	return (newLeftName, newRightName, usesPairNameConvention)
 
 
 ### Splits the active shape key on the specified object into separate left and right halves
@@ -102,8 +144,8 @@ def SplitPairActiveShapeKey(obj, optAxis, newLeftName, newRightName, asyncProgre
 	if asyncProgressReporting:
 		reportAsyncProgress = True
 		wm = bpy.context.window_manager
-		currentVert = asyncProgressReporting["currentVert"]
-		totalVerts = asyncProgressReporting["totalVerts"]
+		currentVert = asyncProgressReporting["CurrentVert"]
+		totalVerts = asyncProgressReporting["TotalVerts"]
 	
 	basisShapeKeyVerts = obj.data.shape_keys.key_blocks[0].data
 	leftShapeKeyVerts = obj.data.shape_keys.key_blocks[newLeftShapeKeyIndex].data
@@ -147,88 +189,18 @@ def SplitPairActiveShapeKey(obj, optAxis, newLeftName, newRightName, asyncProgre
 	obj.active_shape_key_index = originalShapeKeyIndex
 	bpy.ops.object.shape_key_remove()
 	
+	# Select the new L shape key
+	obj.active_shape_key_index = obj.data.shape_keys.key_blocks.keys().index(newLeftName)
+	
 	# Update async progress reporting for delta verts processed
 	if reportAsyncProgress:
-		asyncProgressReporting["currentVert"] = currentVert
-
-
-### Splits all shape key pairs (ONLY shape keys with names like "MyShapeKeyL+MyShapeKeyR") on the specified object into separate left and right halves
-# This method can only run asynchronously with the help of a modal operator
-# Params:
-# - obj: The object whose shape keys we are going to split
-# - axis: The world axis which determines which verts go into the "left" and "right" halves
-def SplitAllShapeKeyPairsAsync(obj, axis):
-	totalShapeKeys = 0
-	toSplitCount = 0
-	toSplitBatch = []
-	
-	# Check all shapekeys for the xyzL+xyzR naming convention and split only those
-	# Examples:
-	# - "HappyL+HappyR" becomes HappyL and HappyR
-	# - "HappyL+UnhappyR" becomes HappyL and UnhappyR (works, but bad names, cannot recombine later)
-	# - "Happyl+happyR" becomes "Happyl" and "happyR" (works, but bad names, cannot recombine later)
-	for keyBlock in obj.data.shape_keys.key_blocks:
-		totalShapeKeys += 1
-		
-		# Select the shape key
-		obj.active_shape_key_index = obj.data.shape_keys.key_blocks.keys().index(keyBlock.name)
-		
-		# Find the new names for the shape key halves
-		newNameData = FindShapeKeySplitNames(keyBlock.name)
-		newLeftName = newNameData[0]
-		newRightName = newNameData[1]
-		usesPairNameConvention = newNameData[2]
-		
-		if (newLeftName != None and newRightName != None and usesPairNameConvention == True):
-			toSplitBatch.append([keyBlock.name, newLeftName, newRightName])
-			toSplitCount += 1
-	
-	# Prepare the async work data for the modal operation's async handler
-	if toSplitCount > 0:
-		print("Preparing to split " + str(toSplitCount) + " of " + str(totalShapeKeys) + " total shape keys")
-		
-		def opMethod(asyncWorkData):
-			splitOp = asyncWorkData["toSplitBatch"][asyncWorkData["currentOp"]]
-			obj = asyncWorkData["obj"]
-			axis = asyncWorkData["axis"]
-			
-			print("Splitting shape key \"" + splitOp[0] + "\" into left: \"" + splitOp[1] + "\" and right: \"" + splitOp[2] + "\" on axis: " + str(axis).upper())
-			obj.active_shape_key_index = obj.data.shape_keys.key_blocks.keys().index(splitOp[0])
-			asyncProgressReporting = {
-				"currentVert": asyncWorkData["currentVert"],
-				"totalVerts": asyncWorkData["totalVerts"],
-			}
-			SplitPairActiveShapeKey(obj, axis, splitOp[1], splitOp[2], asyncProgressReporting)
-			asyncWorkData["currentVert"] = asyncProgressReporting["currentVert"] # Update our tracker for the processed verts count
-			
-			asyncWorkData["currentOp"] += 1
-			if (asyncWorkData["currentOp"] > asyncWorkData["totalOps"] - 1):
-				asyncWorkData["_Finished"] = True
-				bpy.context.window_manager.progress_end()
-			
-		asyncWorkData = {
-				"_OpMethod": opMethod,
-				"_Finished": False,
-				
-				"obj": obj,
-				"axis": axis,
-				"toSplitBatch": toSplitBatch,
-				"currentOp": 0,
-				"totalOps": len(toSplitBatch),
-				"currentVert": 0,
-				"totalVerts": len(obj.data.vertices) * len(toSplitBatch)
-			}
-		
-		bpy.context.window_manager.progress_begin(0, asyncWorkData["totalVerts"])
-		
-		return asyncWorkData
-	else:
-		print("No shape keys matched the paired name convention (e.g. MyKeyL+MyKeyR). Nothing was split.")
-		return None
+		asyncProgressReporting["CurrentVert"] = currentVert
 
 
 ### Given an existing shape key, determines the expected name of the complementary shape key (the L for the R, or the R for the L) and the name of the final shape key if they two were merged
-def FindShapeKeyMergeNames(shapeKeyName):
+# If validateWith = any object, the to-be-merged name will be validated (and adjusted) for conflicts with existing shape keys
+# If validateWith = None, the ideal to-be-merged name will be returned without modification
+def FindShapeKeyMergeNames(shapeKeyName, validateWith=None):
 	expectedCompShapeKeyName = None
 	mergedShapeKeyName = None
 	if shapeKeyName[-1] == "L":
@@ -237,8 +209,11 @@ def FindShapeKeyMergeNames(shapeKeyName):
 	if shapeKeyName[-1] == "R":
 		expectedCompShapeKeyName = shapeKeyName[:-1] + "L"
 		mergedShapeKeyName = expectedCompShapeKeyName + "+" + shapeKeyName
-		
-	return [shapeKeyName, expectedCompShapeKeyName, mergedShapeKeyName]
+	
+	if (validateWith):
+		mergedShapeKeyName = ValidateShapeKeyName(validateWith, mergedShapeKeyName)
+	
+	return (shapeKeyName, expectedCompShapeKeyName, mergedShapeKeyName)
 
 
 ### Merges the specified shape key pair (two shape keys with names like "MyShapeKeyL" and "MyShapeKeyR") on the specified object into a single shape key
@@ -279,8 +254,8 @@ def MergeShapeKeyPair(obj, optAxis, shapeKeyLeftName, shapeKeyRightName, mergedS
 	if asyncProgressReporting:
 		reportAsyncProgress = True
 		wm = bpy.context.window_manager
-		currentVert = asyncProgressReporting["currentVert"]
-		totalVerts = asyncProgressReporting["totalVerts"]
+		currentVert = asyncProgressReporting["CurrentVert"]
+		totalVerts = asyncProgressReporting["TotalVerts"]
 	
 	basisShapeKeyVerts = obj.data.shape_keys.key_blocks[0].data
 	mergedShapeKeyVerts = obj.data.shape_keys.key_blocks[newShapeKeyIndex].data
@@ -328,130 +303,8 @@ def MergeShapeKeyPair(obj, optAxis, shapeKeyLeftName, shapeKeyRightName, mergedS
 	
 	# Update async progress reporting for delta verts processed
 	if reportAsyncProgress:
-		asyncProgressReporting["currentVert"] = currentVert
+		asyncProgressReporting["CurrentVert"] = currentVert
 
-
-### Merges the active shape key with its complementary opposite side shape key (L with R, R with L) if such complementary key exists
-# Params:
-# - obj: The object who has the active shape key we are going to merge
-# - optAxis: The world axis which determines which verts belong to the "left" and "right" halves of the combined shape key
-# - (optional) asyncProgressReporting: An object provided by __init__ for asynchronous operation (i.e. in a modal)
-def MergePairActiveShapeKey(obj, optAxis, asyncProgressReporting=None):
-	selectedShapeKeyName = obj.active_shape_key.name
-	originalShapeKeyIndex = obj.data.shape_keys.key_blocks.keys().index(selectedShapeKeyName)
-	
-	if (originalShapeKeyIndex == 0):
-		raise Exception("You cannot merge the basis shape key")
-	
-	mergeNames = FindShapeKeyMergeNames(selectedShapeKeyName)
-	if (mergeNames[1] == None):
-		raise Exception("The selected shape key does not follow the L/R naming convention. This operation only works on shape keys that end in L or R.")
-	expectedCompShapeKeyName = mergeNames[1]
-	mergedShapeKeyName = mergeNames[2]
-	
-	# Find a complementary shape key by name
-	matchedShapeKeyName = None
-	for keyBlock in obj.data.shape_keys.key_blocks:
-		if keyBlock.name == expectedCompShapeKeyName:
-			matchedShapeKeyName = keyBlock.name
-			break
-	
-	if matchedShapeKeyName == None:
-		raise Exception("No complementary shape key \"" + str(expectedCompShapeKeyName) + "\" was found for the selected shape key \"" + str(selectedShapeKeyName) + "\". No merge can occur.")
-	
-	# Delegate to main merge op
-	if (selectedShapeKeyName[-1] == "L"):
-		MergeShapeKeyPair(obj, optAxis, selectedShapeKeyName, expectedCompShapeKeyName, mergedShapeKeyName, asyncProgressReporting)
-	else:
-		MergeShapeKeyPair(obj, optAxis, expectedCompShapeKeyName, selectedShapeKeyName, mergedShapeKeyName, asyncProgressReporting)
-
-
-### Merges all the valid paired shape keys (pairs like "MyShapeKeyL" and "MyShapeKeyR") on the specified object into combined shape keys
-# This method can only run asynchronously with the help of a modal operator
-# Params:
-# - obj: The object who has the active shape key we are going to merge
-# - axis: The world axis which determines which verts belong to the "left" and "right" halves of the combined shape key
-def MergeAllShapeKeyPairsAsync(obj, axis):
-	totalShapeKeys = 0
-	toMergeCount = 0
-	toMergeBatch = []
-	
-	# Process all shape keys that have an xyzL/xyzR naming convention AND have a complementary shape key to merge with
-	# Example: "HappyL" and "HappyR" becomes "HappyL+HappyR"
-	exclude = {}
-	for keyBlock in obj.data.shape_keys.key_blocks:
-		totalShapeKeys += 1		
-		
-		# Skip already matched shape keys
-		if keyBlock.name in exclude:
-			continue
-		
-		# Check if there's a complementary shape key for this one
-		mergeNames = FindShapeKeyMergeNames(keyBlock.name)
-		if (mergeNames[1] == None):
-			continue
-		expectedCompShapeKeyName = mergeNames[1]
-		mergedShapeKeyName = mergeNames[2]
-		
-		matched = False
-		for checkKeyBlock in obj.data.shape_keys.key_blocks:
-			if checkKeyBlock.name in exclude: # Skip already matched shape keys
-				continue
-			if (checkKeyBlock != keyBlock and checkKeyBlock.name == expectedCompShapeKeyName):
-				matched = True
-				break
-		
-		# Mark an op for the matched pair
-		if matched:
-			exclude[keyBlock.name] = True
-			exclude[expectedCompShapeKeyName] = True
-			toMergeCount += 2 # This counts individual shape keys, not pairs
-			if (keyBlock.name[-1] == "L"):
-				toMergeBatch.append([keyBlock.name, expectedCompShapeKeyName, mergedShapeKeyName])
-			else:
-				toMergeBatch.append([expectedCompShapeKeyName, keyBlock.name, mergedShapeKeyName])
-	
-	# Prepare the async work data for the modal operation's async handler
-	if toMergeCount > 0:
-		print("Preparing to merge " + str(toMergeCount) + " shape keys (" + str(toMergeCount / 2) + " pairs) of " + str(totalShapeKeys) + " total shape keys")
-		
-		def opMethod(asyncWorkData):
-			mergeOp = asyncWorkData["toMergeBatch"][asyncWorkData["currentOp"]]
-			obj = asyncWorkData["obj"]
-			axis = asyncWorkData["axis"]
-			
-			print("Merging left shape key: \"" + mergeOp[0] + "\" and right shape key: \"" + mergeOp[1] + "\" into merged: \"" + mergeOp[2] + "\" on axis: " + str(axis).upper())
-			asyncProgressReporting = {
-				"currentVert": asyncWorkData["currentVert"],
-				"totalVerts": asyncWorkData["totalVerts"],
-			}
-			MergeShapeKeyPair(obj, axis, mergeOp[0], mergeOp[1], mergeOp[2], asyncProgressReporting)
-			asyncWorkData["currentVert"] = asyncProgressReporting["currentVert"] # Update our tracker for the processed verts count
-			
-			asyncWorkData["currentOp"] += 1
-			if (asyncWorkData["currentOp"] > asyncWorkData["totalOps"] - 1):
-				asyncWorkData["_Finished"] = True
-				bpy.context.window_manager.progress_end()
-			
-		asyncWorkData = {
-				"_OpMethod": opMethod,
-				"_Finished": False,
-				
-				"obj": obj,
-				"axis": axis,
-				"toMergeBatch": toMergeBatch,
-				"currentOp": 0,
-				"totalOps": len(toMergeBatch),
-				"currentVert": 0,
-				"totalVerts": len(obj.data.vertices) * len(toMergeBatch)
-			}
-		
-		bpy.context.window_manager.progress_begin(0, asyncWorkData["totalVerts"])
-		
-		return asyncWorkData
-	else:
-		print("No shape key pairs matched the L/R name convention (e.g. MyKeyL and MyKeyR). Nothing was merged.")
-		return None
 
 
 #
@@ -526,8 +379,8 @@ def MergeAndBlendShapeKeys(obj, shapeKey1Name, shapeKey2Name, destination, blend
 	if asyncProgressReporting:
 		reportAsyncProgress = True
 		wm = bpy.context.window_manager
-		currentVert = asyncProgressReporting["currentVert"]
-		totalVerts = asyncProgressReporting["totalVerts"]
+		currentVert = asyncProgressReporting["CurrentVert"]
+		totalVerts = asyncProgressReporting["TotalVerts"]
 	
 	### Iterate all the verts and combine the deltas as per the blend mode
 	for vert in obj.data.vertices:
@@ -598,7 +451,7 @@ def MergeAndBlendShapeKeys(obj, shapeKey1Name, shapeKey2Name, destination, blend
 	
 	# Update async progress reporting for delta verts processed
 	if reportAsyncProgress:
-		asyncProgressReporting["currentVert"] = currentVert
+		asyncProgressReporting["CurrentVert"] = currentVert
 
 
 ### Splits off a new shape key from the active shape key, using the Vertex Filter to determine which deltas go to which shape key
@@ -611,7 +464,7 @@ def MergeAndBlendShapeKeys(obj, shapeKey1Name, shapeKey2Name, destination, blend
 def SplitFilterActiveShapeKey(obj, newShapeKeyName, mode, vertexFilterParams, asyncProgressReporting=None):
 	if (vertexFilterParams == None):
 		raise Exception("Vertex filter parameters must be specified.")
-		
+	
 	sourceShapeKeyIndex = obj.data.shape_keys.key_blocks.keys().index(obj.active_shape_key.name)
 	
 	# New shape key from the basis
@@ -634,8 +487,8 @@ def SplitFilterActiveShapeKey(obj, newShapeKeyName, mode, vertexFilterParams, as
 	if asyncProgressReporting:
 		reportAsyncProgress = True
 		wm = bpy.context.window_manager
-		currentVert = asyncProgressReporting["currentVert"]
-		totalVerts = asyncProgressReporting["totalVerts"]
+		currentVert = asyncProgressReporting["CurrentVert"]
+		totalVerts = asyncProgressReporting["TotalVerts"]
 	
 	### Update the verts of all the involved shape keys
 	for vert in obj.data.vertices:
@@ -676,5 +529,5 @@ def SplitFilterActiveShapeKey(obj, newShapeKeyName, mode, vertexFilterParams, as
 	
 	# Update async progress reporting for delta verts processed
 	if reportAsyncProgress:
-		asyncProgressReporting["currentVert"] = currentVert
+		asyncProgressReporting["CurrentVert"] = currentVert
 
