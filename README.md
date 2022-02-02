@@ -1,7 +1,7 @@
 # Shape Key Tools for Blender 2.79
 Some basic tools for manipulating shape keys beyond Blender's limited abilities.
 
-"Officially" compatible with Blender 2.79, but it should work on older versions (possibly up to 2.75).
+"Officially" compatible with Blender 2.78-2.79, but it should work on older versions (possibly up to 2.75).
 
 ## Split & Merge Shape Key Pairs
 Split and merge shape key pairs, using a `MyShapeKeyL+MyShapeKeyR` naming convention.
