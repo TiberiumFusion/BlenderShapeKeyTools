@@ -8,7 +8,7 @@ from shape_key_tools import common
 
 class WM_OT_ShapeKeyTools_OpSplitByFilter(bpy.types.Operator):
 	bl_idname = "wm.shape_key_tools_split_by_filter"
-	bl_label = "Filter & Split Active Shape Key"
+	bl_label = "Split Active Shape Key"
 	bl_description = "REQUIRES the Vertex Filter to be enabled! Splits the active mesh's active shape key into two shape keys, using the Vertex Filter to determine which deltas end up in the new shape key"
 	bl_options = {"UNDO"}
 	

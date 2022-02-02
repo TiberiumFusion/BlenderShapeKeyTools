@@ -8,7 +8,7 @@ from shape_key_tools import common
 
 class WM_OT_ShapeKeyTools_OpCombineTwo(bpy.types.Operator):
 	bl_idname = "wm.shape_key_tools_combine_two"
-	bl_label = "Blend & Combine Shape Keys"
+	bl_label = "Combine Two Shape Keys"
 	bl_description = "Combines any two shape keys with various options for blending the two shape keys' deltas together. If the Vertex Filter is enabled, the deltas will be filtered before blending."
 	bl_options = {"UNDO"}
 	
