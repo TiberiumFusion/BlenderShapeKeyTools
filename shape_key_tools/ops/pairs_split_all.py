@@ -91,10 +91,10 @@ class WM_OT_ShapeKeyTools_OpSplitAllPairs(bpy.types.Operator):
 			self._CurBatchNum = 0
 			self._CurVert = 0
 			self._TotalVerts = len(obj.data.vertices) * len(self._SplitBatch)
-			self._ModalWorkPacing = False
+			self._ModalWorkPacing = 0
 			
 			context.window_manager.modal_handler_add(self)
-			self._Timer = context.window_manager.event_timer_add(0.05, context.window)
+			self._Timer = context.window_manager.event_timer_add(0.1, context.window)
 			context.window_manager.progress_begin(0, self._TotalVerts)
 			
 			self.report({'INFO'}, "Preparing to split " + str(len(self._SplitBatch)) + " of " + str(len(obj.data.shape_keys.key_blocks)) + " total shape keys")
@@ -106,20 +106,19 @@ class WM_OT_ShapeKeyTools_OpSplitAllPairs(bpy.types.Operator):
 	# Split one shape key at a time per modal event
 	def modal(self, context, event):
 		if event.type == "TIMER":
+			obj = self._Obj
+			
+			(oldName, splitLName, splitRName) = self._SplitBatch[self._CurBatchNum]
+			
 			# If we do work every modal() event (or even every 2nd or 3rd), the Blender UI will not update
 			# So we always wait a few modal pulses after finishing the last work segment before doing the next work segment
 			if (self._ModalWorkPacing == 0): # notify
 				# The UI needs one full update cycle after self.report() to display it, so we do this one modal event *before* the actual work
-				(oldName, splitLName, splitRName) = self._SplitBatch[self._CurBatchNum]
 				self.preport("Splitting shape key " + str(self._CurBatchNum + 1) + "/" + str(len(self._SplitBatch)) + " '" + oldName + "' into left: '" + splitLName + "' and right: '" + splitRName + "'")
 				
 			elif (self._ModalWorkPacing == 1): # work
 				# Persistent parameters for all shape key splits
-				obj = self._Obj
 				axis = self._SplitAxis
-				
-				# The current shape key we are about to split
-				(oldName, splitLName, splitRName) = self._SplitBatch[self._CurBatchNum]
 				
 				# Create async progress reporting data so the split method can report progress to the window manager's progress cursor
 				asyncProgressReporting = {

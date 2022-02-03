@@ -64,7 +64,7 @@ def CreateVertexFilterKernel(params):
 	return filter
 	
 
-	
+
 #
 #====================================================================================================
 #    Pair Split/Merge

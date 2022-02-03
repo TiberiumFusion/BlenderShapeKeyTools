@@ -47,7 +47,8 @@ class ShapeKeyTools_Properties(bpy.types.PropertyGroup):
 	opt_gui_subpanel_expander_globalopts = BoolProperty(name="Global Options", default=False, description="These options are shared by all operations, but some operations may not use them. Read each operation's tooltip for more info!")
 	opt_gui_subpanel_expander_shapepairs = BoolProperty(name="Split/Merge Pairs", default=True, description="Operations for splitting and merging shape key pairs (i.e. symmetrical shape keys, like facial expressions)")
 	opt_gui_subpanel_expander_shapepairsopts = BoolProperty(name="Split/Merge Pairs Options", default=True, description="These options ONLY affect the 4 operations below")
-	opt_gui_subpanel_expander_arbitrary = BoolProperty(name="Other Operations", default=True, description="General purpose operations")
+	opt_gui_subpanel_expander_arbitrary = BoolProperty(name="Arbitrary Split/Merge Operations", default=True, description="General purpose split & merge operations")
+	opt_gui_subpanel_expander_modifiers = BoolProperty(name="Modifer Operations", default=True, description="Operations involving shape keys and modifiers")
 	
 	### Global options for all ops
 	opt_global_enable_filterverts = BoolProperty(
@@ -253,6 +254,17 @@ class OBJECT_PT_ShapeKeyTools_Panel(bpy.types.Panel):
 			splitByFilterCon.operator("wm.shape_key_tools_split_by_filter", icon_value=UiIconsExtra["arrow_branch"].icon_id)
 			splitByFilterCon.enabled = properties.opt_global_enable_filterverts
 			g2Body.operator("wm.shape_key_tools_combine_two", icon_value=UiIconsExtra["arrow_merge"].icon_id)
+		
+		### Modifiers
+		g3 = layout.box()
+		g3Col = g3.column()
+		g3Header = g3Col.row()
+		g3Header.alignment = 'LEFT'
+		g3Header.prop(properties, "opt_gui_subpanel_expander_modifiers", icon=("TRIA_DOWN" if properties.opt_gui_subpanel_expander_modifiers else "TRIA_RIGHT"), text="Shape Key Modifiers", emboss=False, expand=False)
+		if (properties.opt_gui_subpanel_expander_modifiers):
+			g3Body = g3Col.column()
+			# Operators
+			g3Body.operator("wm.shape_key_tools_apply_modifiers_to_shape_keys", icon="MODIFIER")
 		
 
 
