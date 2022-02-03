@@ -97,9 +97,9 @@ class WM_OT_ShapeKeyTools_ApplyModifiersToShapeKeys(bpy.types.Operator):
 	
 	# report() doesnt print to console when running inside modal() for some weird reason
 	# So we have to do that manually
-	def preport(self, message):
+	def preport(self, message, type="INFO"):
 		print(message)
-		self.report({'INFO'}, message)
+		self.report({type}, message)
 		
 	
 	def draw(self, context):
@@ -111,7 +111,7 @@ class WM_OT_ShapeKeyTools_ApplyModifiersToShapeKeys(bpy.types.Operator):
 		
 		### Usage info
 		topBody.label("Apply modifiers (in stack order) to the base mesh and all of its shape keys.")
-		topBody.label("This operation may take a while, especially on detailed meshes.")
+		topBody.label("This operation may take a very long time, especially for detailed meshes with many shape keys.")
 		for optListItem in self.opt_modifiers:
 			if (optListItem.is_compatible == False):
 				topBody.box().label("Modifiers that change vertex count cannot be applied.", icon="ERROR")
@@ -123,7 +123,7 @@ class WM_OT_ShapeKeyTools_ApplyModifiersToShapeKeys(bpy.types.Operator):
 		for optListItem in self.opt_modifiers:
 			modifierTypeInfo = ModifierTypeInfo[optListItem.type]
 			icon = modifierTypeInfo[0]
-			cols = gModifiers.column_flow(columns=2, align=False)
+			cols = gModifiers.box().column_flow(columns=2, align=False)
 			row1 = cols.row()
 			row1.alignment = "LEFT"
 			row1.prop(optListItem, "is_visible_in_viewport_readonly", icon="RESTRICT_VIEW_OFF", text="", emboss=True)
@@ -189,6 +189,7 @@ class WM_OT_ShapeKeyTools_ApplyModifiersToShapeKeys(bpy.types.Operator):
 	
 	_Obj = None
 	_ModifierApplyOrder = []
+	_InvalidModifiers = {}
 	_ShapeKeyDependencies = {}
 	_ShapeKeyObj = None
 	_CurWorkspaceObj = None
@@ -196,6 +197,7 @@ class WM_OT_ShapeKeyTools_ApplyModifiersToShapeKeys(bpy.types.Operator):
 	_WorkSubstage = -1
 	_CurShapeKeyIndex = 0
 	_TotalShapeKeys = 0
+	_AnyWarnings = False
 	
 	
 	def execute(self, context):
@@ -228,6 +230,8 @@ class WM_OT_ShapeKeyTools_ApplyModifiersToShapeKeys(bpy.types.Operator):
 			self._Obj = obj
 			self._TotalShapeKeys = len(obj.data.shape_keys.key_blocks.keys()) # includes the basis shape key!
 			self._CurShapeKeyIndex = 0
+			self._InvalidModifiers = {}
+			self._AnyWarnings = False
 			
 			# Flatten the shape key dependency tree by making all shape keys relative to the first shape key (which *should* be the basis, but Blender does not enforce this... nothing we can do, sadly)
 			self._ShapeKeyDependencies = {}
@@ -281,7 +285,17 @@ class WM_OT_ShapeKeyTools_ApplyModifiersToShapeKeys(bpy.types.Operator):
 				
 				# Apply the user's chosen modifiers to the base mesh
 				for modifierName in self._ModifierApplyOrder:
-					bpy.ops.object.modifier_apply(apply_as="DATA", modifier=modifierName)
+					# Modifiers can be "disabled" on account of having invalid configuration (i.e. an Armature modifier without any armature object chosen)
+					# https://github.com/blender/blender/blob/594f47ecd2d5367ca936cf6fc6ec8168c2b360d0/source/blender/editors/object/object_modifier.c#L677
+					# This is not exposed to python, so there is no (clean) way of detecting these modifiers and warning the user
+					# All we can really do is ignore it if it fails to apply and just keep going
+					if (not modifierName in self._InvalidModifiers):
+						try:
+							bpy.ops.object.modifier_apply(apply_as="DATA", modifier=modifierName)
+						except RuntimeError as e:
+							self._InvalidModifiers[modifierName] = True
+							self._AnyWarnings = True
+							self.preport("[!!!!!] WARNING: Modifier '" + modifierName + "' failed to apply! Modifier will be skipped on shape keys. Modifier configuration is likely invalid. [!!!!!]", "WARNING")
 				
 				# Create the new basis shape key
 				bpy.ops.object.shape_key_add()
@@ -308,6 +322,10 @@ class WM_OT_ShapeKeyTools_ApplyModifiersToShapeKeys(bpy.types.Operator):
 					self._WorkSubstage = 1
 					
 				elif (self._WorkSubstage == 1):
+					# Idle to improve the odds that Blender will actually show the previous report()
+					self._WorkSubstage = 2
+				
+				elif (self._WorkSubstage == 2):
 					# Duplicate the shape key object
 					self.singleSelect(context, skObj)
 					bpy.ops.object.duplicate()
@@ -322,9 +340,9 @@ class WM_OT_ShapeKeyTools_ApplyModifiersToShapeKeys(bpy.types.Operator):
 					# Set the active shape key in preparation for the next substage
 					workspaceObj.active_shape_key_index = len(workspaceObj.data.shape_keys.key_blocks.keys()) - 2
 					
-					self._WorkSubstage = 2
+					self._WorkSubstage = 3
 				
-				elif (self._WorkSubstage == 2):
+				elif (self._WorkSubstage == 3):
 					# Apply the active shape key to the base mesh
 					self.singleSelect(context, workspaceObj)
 					for i in range(len(workspaceObj.data.shape_keys.key_blocks.keys())):
@@ -332,7 +350,13 @@ class WM_OT_ShapeKeyTools_ApplyModifiersToShapeKeys(bpy.types.Operator):
 					
 					# Apply the user's chosen modifiers to the base mesh
 					for modifierName in self._ModifierApplyOrder:
-						bpy.ops.object.modifier_apply(apply_as="DATA", modifier=modifierName)
+						if (not modifierName in self._InvalidModifiers):
+							try:
+								bpy.ops.object.modifier_apply(apply_as="DATA", modifier=modifierName)
+							except RuntimeError as e:
+								self._InvalidModifiers[modifierName] = True
+								self._AnyWarnings = True
+								self.preport("[!!!!!] WARNING: Modifier '" + modifierName + "' failed to apply! Modifier configuration is likely invalid. [!!!!!]", "WARNING")
 					
 					# Add the workspace obj back to the source object as a new shape key
 					self.singleSelect(context, workspaceObj)
@@ -388,7 +412,10 @@ class WM_OT_ShapeKeyTools_ApplyModifiersToShapeKeys(bpy.types.Operator):
 				# Done
 				bpy.context.window_manager.progress_end()
 				self.cancel(context)
-				self.preport("Modifiers applied to base mesh and all shape keys.")
+				if (self._AnyWarnings):
+					self.preport("Some modifiers failed to apply. Check console for details.", "ERROR")
+				else:
+					self.preport("All modifiers successfully applied.")
 				return {"CANCELLED"}
 				
 			# Ensure the same object is selected at the end of every modal event so that the UI doesn't rapidly change
