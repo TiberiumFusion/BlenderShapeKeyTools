@@ -1,6 +1,6 @@
 # Shape Key Tools for Blender 2.79
 Some basic tools for manipulating shape keys beyond Blender's limited abilities.
-* Split paired shape keys into left & right halves. Merge left & right shape keys pairs together.
+* Split paired shape keys into left & right halves. Merge left & right shape key pairs together.
 * Combine shape keys with various blend modes and per-vertex filtering
 * Split shape keys with per-vertex filtering
 * Apply modifiers to meshes with shape keys
@@ -38,6 +38,7 @@ Split off a new shape key from an existing shape key, using various options to f
 
 ## Apply modifiers to meshes with shape keys
 Apply modifiers to meshes with shape keys, baking the modifier into both the base mesh and the shape key deltas.
+* Useful when you don't want to recreate 100 blend shapes just because Blender doesn't know how to deform shape keys.
 * Multiple modifiers can be applied at once, in stack order.
 * Only vertex-preserving modifiers are compatible. Modifiers which change topology or vertex count cannot be applied.
 
