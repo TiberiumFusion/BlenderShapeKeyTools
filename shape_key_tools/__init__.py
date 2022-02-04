@@ -11,7 +11,7 @@
 bl_info = {
 	"name": "Shape Key Tools",
 	"author": "TiberiumFusion",  
-	"version": (2, 1, 0, 0),
+	"version": (2, 1, 1, 0),
 	"blender": (2, 78, 0), # This is a guess... I think it was 2.77 or 2.78 that added some of the operators/api we need. Definitely no earlier than 2.75, since that is when support for custom icons was added.
 	"location": "Object > Tools > Shape Key Tools",
 	"description": "Tools for working with shape keys beyond Blender's limited abilities.",
@@ -26,6 +26,8 @@ from types import SimpleNamespace
 
 import bpy, bpy.utils.previews
 from bpy.props import *
+
+from . import common
 
 
 # Container of our custom icons
@@ -50,6 +52,7 @@ class ShapeKeyTools_Properties(bpy.types.PropertyGroup):
 	opt_gui_subpanel_expander_shapepairsopts = BoolProperty(name="Split/Merge Pairs Options", default=True, description="These options ONLY affect the 4 operations below")
 	opt_gui_subpanel_expander_arbitrary = BoolProperty(name="Arbitrary Split/Merge Operations", default=True, description="General purpose split & merge operations")
 	opt_gui_subpanel_expander_modifiers = BoolProperty(name="Modifer Operations", default=True, description="Operations involving shape keys and modifiers")
+	opt_gui_subpanel_expander_info = BoolProperty(name="Info", default=True, description="Miscellaneous information on the active object's shape keys")
 	
 	### Global options for all ops
 	opt_global_enable_filterverts = BoolProperty(
@@ -266,6 +269,84 @@ class OBJECT_PT_ShapeKeyTools_Panel(bpy.types.Panel):
 			g3Body = g3Col.column()
 			# Operators
 			g3Body.operator("wm.shape_key_tools_apply_modifiers_to_shape_keys", icon="MODIFIER")
+		
+		### Info
+		g4 = layout.box()
+		g4Col = g4.column()
+		g4Header = g4Col.row()
+		g4HeaderL = g4Header.row()
+		g4HeaderR = g4Header.row()
+		g4HeaderL.alignment = 'LEFT'
+		g4HeaderR.alignment = 'RIGHT'
+		infoHeaderText = "Info"
+		if (obj):
+			infoHeaderText = obj.name
+		g4HeaderL.prop(properties, "opt_gui_subpanel_expander_info", icon=("TRIA_DOWN" if properties.opt_gui_subpanel_expander_info else "TRIA_RIGHT"), text=infoHeaderText, emboss=False, expand=False)
+		g4HeaderR.label(text="", icon="QUESTION")
+		if (properties.opt_gui_subpanel_expander_info):
+			g4Body = g4Col.column()
+			try:
+				if (hasattr(obj.data.shape_keys, "key_blocks")):
+					# Active shape key
+					active = g4Body.box().column()
+					activeRow = active.row()
+					activeL = activeRow.row()
+					activeR = activeRow.row()
+					activeL.alignment = "LEFT"
+					activeR.alignment = "RIGHT"
+					activeL.label("Active")
+					activeR.label(obj.data.shape_keys.key_blocks[obj.active_shape_key_index].name)
+					if (obj.active_shape_key_index == 0):
+						active.label("Incompatible with some ops", icon="ERROR")
+					# Total shape keys
+					total = g4Body.box().column()
+					totalRow = total.row()
+					totalL = totalRow.row()
+					totalR = totalRow.row()
+					totalL.alignment = "LEFT"
+					totalR.alignment = "RIGHT"
+					totalL.label("Total shape keys")
+					totalR.label(str(len(obj.data.shape_keys.key_blocks)))
+					# Merged L+R pair keys
+					pairKeys = g4Body.box().column()
+					pairKeysRow = pairKeys.row()
+					pairKeysL = pairKeysRow.row()
+					pairKeysR = pairKeysRow.row()
+					pairKeysL.alignment = "LEFT"
+					pairKeysR.alignment = "RIGHT"
+					pairKeysL.label("L+R Pairs")
+					pairCount = 0
+					seen = {}
+					for keyBlock in obj.data.shape_keys.key_blocks:
+						if (not keyBlock.name in seen):
+							seen[keyBlock.name] = True
+							(splitLName, splitRName, usesPlusConvention) = common.FindShapeKeyPairSplitNames(keyBlock.name)
+							if (usesPlusConvention):
+								pairCount += 1
+					pairKeysR.label(str(pairCount))
+					# Unmerged L+R pair keys
+					unmergedPairKeys = g4Body.box().column()
+					unmergedPairKeysRow = unmergedPairKeys.row()
+					unmergedPairKeysL = unmergedPairKeysRow.row()
+					unmergedPairKeysR = unmergedPairKeysRow.row()
+					unmergedPairKeysL.alignment = "LEFT"
+					unmergedPairKeysR.alignment = "RIGHT"
+					unmergedPairKeysL.label("Unmerged L+R Pairs")
+					unmergedPairCount = 0
+					seen = {}
+					for keyBlock in obj.data.shape_keys.key_blocks:
+						if (not keyBlock.name in seen):
+							seen[keyBlock.name] = True
+							(firstName, expectedCompName, mergedName) = common.FindShapeKeyMergeNames(keyBlock.name)
+							if (not expectedCompName in seen and expectedCompName in obj.data.shape_keys.key_blocks.keys()):
+								seen[expectedCompName] = True
+								unmergedPairCount += 1
+					unmergedPairKeysR.label(str(unmergedPairCount))
+				else:
+					g4Body.label("Object has no shape keys.")
+			except Exception as e:
+				g4Body.label(str(e), icon="CANCEL")
+				raise
 		
 
 
