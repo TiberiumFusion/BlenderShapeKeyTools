@@ -74,7 +74,7 @@ def CreateVertexFilterKernel(params):
 ### Given an existing shape key, determines the new names if this shape key was to be split into L and R halves
 # If validateWith = any object, the new names will be validated (and adjusted) for conflicts with existing shape keys
 # If validateWith = None, the ideal new names will be returned without modification
-def FindShapeKeyPairSplitNames(originalShapeKeyName, validateWith=True):
+def FindShapeKeyPairSplitNames(originalShapeKeyName, validateWith=None):
 	newLeftName = None
 	newRightName = None
 	usesPairNameConvention = False
@@ -115,6 +115,7 @@ def SplitPairActiveShapeKey(obj, optAxis, newLeftName, newRightName, asyncProgre
 	originalShapeKeyName = obj.active_shape_key.name
 	originalShapeKeyIndex = obj.data.shape_keys.key_blocks.keys().index(originalShapeKeyName)
 	
+	# Basis shape key cannot be split (assume this is key 0)
 	if (originalShapeKeyIndex == 0):
 		raise Exception("You cannot split the basis shape key")
 	
@@ -223,16 +224,34 @@ def FindShapeKeyMergeNames(shapeKeyName, validateWith=None):
 # - shapeKeyLeftName: Name of the "left" side shape key to be merged
 # - shapeKeyRightName: Name of the "right" side shape key to be merged
 # - mergedShapeKeyName: Name of the soon-to-be merged shape key
+# - (optional) deleteInputShapeKeys: Defaults to delete the left and right shape keys creating the new merged key
 # - (optional) asyncProgressReporting: An object provided by __init__ for asynchronous operation (i.e. in a modal)
-def MergeShapeKeyPair(obj, optAxis, shapeKeyLeftName, shapeKeyRightName, mergedShapeKeyName, asyncProgressReporting=None):
+def MergeShapeKeyPair(obj, optAxis, shapeKeyLeftName, shapeKeyRightName, mergedShapeKeyName, deleteInputShapeKeys=True, asyncProgressReporting=None):
 	# Find the indices of the left and right shape keys
 	leftShapeKeyIndex = obj.data.shape_keys.key_blocks.keys().index(shapeKeyLeftName)
 	rightShapeKeyIndex = obj.data.shape_keys.key_blocks.keys().index(shapeKeyRightName)
+	
+	# Neither shape key can be the basis key (assume this is key 0)
+	if (leftShapeKeyIndex == 0 or rightShapeKeyIndex == 0):
+		raise Exception("The basis shape key cannot be merged.")
+	
+	key0 = obj.data.shape_keys.key_blocks[0]
+	leftShapeKey = obj.data.shape_keys.key_blocks[leftShapeKeyIndex]
+	rightShapeKey = obj.data.shape_keys.key_blocks[rightShapeKeyIndex]
+	
+	# If the two shape keys are relative to a key other than key 0 (should be the basis shape, assuming the user isn't being weird), change them now and restore the relative key at the end
+	leftOldBasisKey = leftShapeKey.relative_key
+	rightOldBasisKey = rightShapeKey.relative_key
+	if (leftOldBasisKey != key0):
+		leftShapeKey.relative_key = key0
+	if (rightOldBasisKey != key0):
+		rightShapeKey.relative_key = key0
 	
 	# Create a new shape key from the basis
 	obj.active_shape_key_index = 0
 	obj.shape_key_add(name=str(mergedShapeKeyName), from_mix=False)
 	newShapeKeyIndex = len(obj.data.shape_keys.key_blocks) - 1
+	newShapeKey = obj.data.shape_keys.key_blocks[newShapeKeyIndex]
 	
 	# Cherry pick which verts to bring into the new shape key from the -/+ sides of the left and right shape keys pair
 	axis = 0
@@ -257,10 +276,10 @@ def MergeShapeKeyPair(obj, optAxis, shapeKeyLeftName, shapeKeyRightName, mergedS
 		currentVert = asyncProgressReporting["CurrentVert"]
 		totalVerts = asyncProgressReporting["TotalVerts"]
 	
-	basisShapeKeyVerts = obj.data.shape_keys.key_blocks[0].data
-	mergedShapeKeyVerts = obj.data.shape_keys.key_blocks[newShapeKeyIndex].data
-	leftShapeKeyVerts = obj.data.shape_keys.key_blocks[leftShapeKeyIndex].data
-	rightShapeKeyVerts = obj.data.shape_keys.key_blocks[rightShapeKeyIndex].data
+	basisShapeKeyVerts = key0.data
+	mergedShapeKeyVerts = newShapeKey.data
+	leftShapeKeyVerts = leftShapeKey.data
+	rightShapeKeyVerts = rightShapeKey.data
 	
 	for vert in obj.data.vertices:
 		if reportAsyncProgress:
@@ -283,7 +302,16 @@ def MergeShapeKeyPair(obj, optAxis, shapeKeyLeftName, shapeKeyRightName, mergedS
 		# If the original vert is +aXis (left side), then we pick the flexed vert from the Left shape key
 		if (axisSplitCoord >= 0):
 			mergedShapeKeyVerts[vert.index].co = leftShapeKeyVerts[vert.index].co * 1
-			
+	
+	# Restore relative_key for the two input shape keys if necessary
+	if (leftOldBasisKey != key0):
+		leftShapeKey.relative_key = leftOldBasisKey
+	if (rightOldBasisKey != key0):
+		rightShapeKey.relative_key = rightOldBasisKey
+	
+	# Set the relative_key for the new merged shape key to whatever the relative key was for the left shape key
+	newShapeKey.relative_key = leftOldBasisKey
+	
 	# Move the new merged shape key in the shape key list to sit after the firstmost shape key of the pair in the shape key list
 	originalShapeKeyIndex = min(leftShapeKeyIndex, rightShapeKeyIndex)
 	while (newShapeKeyIndex > originalShapeKeyIndex + 1):
@@ -293,10 +321,11 @@ def MergeShapeKeyPair(obj, optAxis, shapeKeyLeftName, shapeKeyRightName, mergedS
 		newShapeKeyIndex -= 1
 	
 	# Delete the left and right shape keys
-	obj.active_shape_key_index = obj.data.shape_keys.key_blocks.keys().index(shapeKeyLeftName)
-	bpy.ops.object.shape_key_remove()
-	obj.active_shape_key_index = obj.data.shape_keys.key_blocks.keys().index(shapeKeyRightName)
-	bpy.ops.object.shape_key_remove()
+	if (deleteInputShapeKeys):
+		obj.active_shape_key_index = obj.data.shape_keys.key_blocks.keys().index(shapeKeyLeftName)
+		bpy.ops.object.shape_key_remove()
+		obj.active_shape_key_index = obj.data.shape_keys.key_blocks.keys().index(shapeKeyRightName)
+		bpy.ops.object.shape_key_remove()
 	
 	# Reselect merged shape key
 	obj.active_shape_key_index = obj.data.shape_keys.key_blocks.keys().index(mergedShapeKeyName)
@@ -337,9 +366,21 @@ def MergeAndBlendShapeKeys(obj, shapeKey1Name, shapeKey2Name, destination, blend
 	lowerShapeKeyIndex = obj.data.shape_keys.key_blocks.keys().index(shapeKey1Name)
 	upperShapeKeyIndex = obj.data.shape_keys.key_blocks.keys().index(shapeKey2Name)
 	
-	basisShapeKeyVerts = obj.data.shape_keys.key_blocks[0].data
-	lowerShapeKeyVerts = obj.data.shape_keys.key_blocks[lowerShapeKeyIndex].data
-	upperShapeKeyVerts = obj.data.shape_keys.key_blocks[upperShapeKeyIndex].data
+	key0 = obj.data.shape_keys.key_blocks[0]
+	lowerShapeKey = obj.data.shape_keys.key_blocks[lowerShapeKeyIndex]
+	upperShapeKey = obj.data.shape_keys.key_blocks[upperShapeKeyIndex]
+	
+	# If the two shape keys are relative to a key other than key 0 (should be the basis shape, assuming the user isn't being weird), change them now and restore the relative key at the end
+	lowerOldBasisKey = lowerShapeKey.relative_key
+	upperOldBasisKey = upperShapeKey.relative_key
+	if (lowerOldBasisKey != key0):
+		lowerShapeKey.relative_key = key0
+	if (upperOldBasisKey != key0):
+		upperShapeKey.relative_key = key0
+	
+	basisShapeKeyVerts = key0.data
+	lowerShapeKeyVerts = lowerShapeKey.data
+	upperShapeKeyVerts = upperShapeKey.data
 	newShapeKeyVerts = None
 	if (newShapeKeyIndex != None):
 		newShapeKeyVerts = obj.data.shape_keys.key_blocks[newShapeKeyIndex].data
@@ -437,6 +478,12 @@ def MergeAndBlendShapeKeys(obj, shapeKey1Name, shapeKey2Name, destination, blend
 			obj.active_shape_key_index = newShapeKeyIndex
 			bpy.ops.object.shape_key_move(type="UP")
 			newShapeKeyIndex -= 1
+	
+	# Restore relative_key for the two input shape keys if necessary
+	if (lowerOldBasisKey != key0):
+		lowerShapeKey.relative_key = lowerOldBasisKey
+	if (upperOldBasisKey != key0):
+		upperShapeKey.relative_key = upperOldBasisKey
 	
 	# Delete the source shape keys if desired
 	if (delete1OnFinish):
