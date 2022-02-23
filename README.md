@@ -27,7 +27,7 @@ Split and merge shape key pairs, using a `MyShapeKeyL+MyShapeKeyR` naming conven
 Combine two shapes keys together with a variety of Photoshop-like blending modes and vertex filtering options.
 * Useful when you don't want to fuss with the shape key panel and "New Shape Key From Mix", or when Blender's only ability to additively blend all verts is not desirable.
 * Blend modes: `add`, `subtract`, `multiply`, `divide`, `overwrite`, `lerp`
-* Vertex filtering "masks" which verts are blending together, using the shape key's characteristics or the model's vertex groups.
+* Vertex filtering "masks" which verts are blended together, using the shape key's characteristics or the model's vertex groups.
 
 ![Demo3 gif](github_media/demovids/demo3.gif)
 
