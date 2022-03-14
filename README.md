@@ -18,10 +18,10 @@ Split and merge shape key pairs, using a `MyShapeKeyL+MyShapeKeyR` naming conven
 * Crossfade split shape keys for a smooth transition between each half.
 
 ### Split and merge shape keys individually or all at once
-![Demo1 gif](github_media/demovids/demo1.gif)
+![Demo1 gif](github_media/demovids/demo1a.gif)
 
 ### Fine-tune splitting with viewport guides and live preview
-![Demo2 gif](github_media/demovids/demo2.gif)
+![Demo2 gif](github_media/demovids/demo2a.gif)
 
 
 ## Combine shape keys
