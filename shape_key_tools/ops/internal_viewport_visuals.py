@@ -1035,7 +1035,7 @@ def UnsetDrawingEnablerProperties(context):
 
 ### Removes the drawing callback and considers the operator as disabled
 # Param cls must be the __class__ object
-def Disable(cls, context):
+def Disable(cls):
 	if (cls.DrawingHandle3d != None):
 		bpy.types.SpaceView3D.draw_handler_remove(cls.DrawingHandle3d, "WINDOW")
 		cls.DrawingHandle3d = None
@@ -1056,7 +1056,7 @@ class VIEW_3D_OT_ShapeKeyTools_ViewportVisuals(bpy.types.Operator):
 	### Hook for when the current blend file is closing
 	def BlendFilePreLoadWatcher(self, context):
 		try:
-			Disable(self.__class__, context)
+			Disable(self.__class__)
 		except:
 			pass
 	
@@ -1073,7 +1073,7 @@ class VIEW_3D_OT_ShapeKeyTools_ViewportVisuals(bpy.types.Operator):
 			return {'PASS_THROUGH'}
 		else:
 			self.RemoveModalTimer(context)
-			Disable(self.__class__, context)
+			Disable(self.__class__)
 			context.area.tag_redraw() # Ensure viewport refreshes
 			return {'CANCELLED'}
 	
@@ -1081,7 +1081,7 @@ class VIEW_3D_OT_ShapeKeyTools_ViewportVisuals(bpy.types.Operator):
 	def execute(self, context):
 		if (context.area.type == "VIEW_3D"):
 			# Setup 3D drawing callback for the viewport
-			self.__class__.DrawingHandle3d = bpy.types.SpaceView3D.draw_handler_add(ViewportDraw, (self, context), 'WINDOW', 'POST_VIEW')
+			self.__class__.DrawingHandle3d = bpy.types.SpaceView3D.draw_handler_add(ViewportDraw, (self, context), "WINDOW", "POST_VIEW")
 			
 			# Opening a different blend file will stop this op before modal() has a chance to notice the blend file has changed
 			# So we need to watch for that and clean up the drawing callback as needed

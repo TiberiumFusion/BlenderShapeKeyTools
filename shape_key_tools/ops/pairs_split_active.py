@@ -13,6 +13,19 @@ class WM_OT_ShapeKeyTools_OpSplitActivePair(bpy.types.Operator):
 	bl_options = {"UNDO"}
 	
 	
+	opt_delete_original = BoolProperty(
+		name = "Delete Original Shape Key",
+		description = "Delete the original shape key after creating the two new split shape keys.",
+		default = True,
+	)
+	
+	opt_clear_preview = BoolProperty(
+		name = "Clear Live Preview if Enabled",
+		description = "Disable the pair split preview after splitting if it is currently enabled.",
+		default = True,
+	)
+	
+	
 	def validate(self, context):
 		# This op requires an active object
 		if (context.object == None or hasattr(context, "object") == False):
@@ -69,8 +82,17 @@ class WM_OT_ShapeKeyTools_OpSplitActivePair(bpy.types.Operator):
 		smoothingDistance = properties.opt_shapepairs_split_smoothdist
 		if (properties.opt_shapepairs_split_mode == "sharp"):
 			smoothingDistance = 0
-		common.SplitPairActiveShapeKey(obj, properties.opt_shapepairs_split_axis, splitLName, splitRName, smoothingDistance)
+		common.SplitPairActiveShapeKey(obj, properties.opt_shapepairs_split_axis, splitLName, splitRName, smoothingDistance, self.opt_delete_original)
 		self.report({'INFO'}, "Split shape key '" + oldName + "' into left: '"  + splitLName + "' and right: '" + splitRName + "'")
+		
+		# If the user was previewing this split, disable the preview now and make active the shape key side that was being previewed (L or R)
+		if (self.opt_clear_preview):
+			if (properties.opt_shapepairs_splitmerge_preview_split_left):
+				obj.active_shape_key_index = obj.data.shape_keys.key_blocks.keys().index(splitLName)
+			elif (properties.opt_shapepairs_splitmerge_preview_split_right):
+				obj.active_shape_key_index = obj.data.shape_keys.key_blocks.keys().index(splitRName)
+			properties.opt_shapepairs_splitmerge_preview_split_left = False
+			properties.opt_shapepairs_splitmerge_preview_split_right = False
 		
 		return {'FINISHED'}
 

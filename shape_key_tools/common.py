@@ -122,9 +122,10 @@ def FindShapeKeyPairSplitNames(originalShapeKeyName, validateWith=None):
 # - optAxis: The world axis which determines which verts go into the "left" and "right" halves
 # - newLeftName: Name for the newly split-off left side shape key
 # - newRightName: Name for the newly split-off right side shape key
+# - (optional) deleteOriginal: If false, the original shape key will be kept instead of deleted
 # - (optional) smoothDistance: Distance in world space from the origin of the split axis to crossblend the split shape keys 
 # - (optional) asyncProgressReporting: An object provided by __init__ for asynchronous operation (i.e. in a modal)
-def SplitPairActiveShapeKey(obj, optAxis, newLeftName, newRightName, smoothDistance=0, asyncProgressReporting=None):
+def SplitPairActiveShapeKey(obj, optAxis, newLeftName, newRightName, smoothDistance=0, deleteOriginal=True, asyncProgressReporting=None):
 	originalShapeKeyName = obj.active_shape_key.name
 	originalShapeKeyIndex = obj.data.shape_keys.key_blocks.keys().index(originalShapeKeyName)
 	
@@ -165,13 +166,6 @@ def SplitPairActiveShapeKey(obj, optAxis, newLeftName, newRightName, smoothDista
 	originalShapeKeyVerts = obj.data.shape_keys.key_blocks[originalShapeKeyIndex].data
 	leftShapeKeyVerts = obj.data.shape_keys.key_blocks[newLeftShapeKeyIndex].data
 	rightShapeKeyVerts = obj.data.shape_keys.key_blocks[newRightShapeKeyIndex].data
-	
-	'''
-	# When the L/R crossfade is enabled, we cannot modify the shape key data blocks in-place, so we need a copy the shape key deltas
-	shapeKeyDeltas = []
-	if (smoothDistance > 0):
-		for vert in leftShapeKey
-	'''
 	
 	for vert in obj.data.vertices:
 		if reportAsyncProgress:
@@ -227,8 +221,9 @@ def SplitPairActiveShapeKey(obj, optAxis, newLeftName, newRightName, smoothDista
 		newRightShapeKeyIndex -= 1
 	
 	# Delete original shape key
-	obj.active_shape_key_index = originalShapeKeyIndex
-	bpy.ops.object.shape_key_remove()
+	if (deleteOriginal):
+		obj.active_shape_key_index = originalShapeKeyIndex
+		bpy.ops.object.shape_key_remove()
 	
 	# Select the new L shape key
 	obj.active_shape_key_index = obj.data.shape_keys.key_blocks.keys().index(newLeftName)

@@ -10,7 +10,7 @@
 
 bl_info = {
 	"name": "Shape Key Tools",
-	"author": "TiberiumFusion",  
+	"author": "TiberiumFusion",
 	"version": (2, 2, 0, 0),
 	"blender": (2, 78, 0), # This is a guess... I think it was 2.77 or 2.78 that added some of the operators/api we need. Definitely no earlier than 2.75, since that is when support for custom icons was added.
 	"location": "Object > Tools > Shape Key Tools",
@@ -37,46 +37,90 @@ UiIconsExtra = None
 # Dictionary of registered operators, mapped by their Blender ID (e.g. "wm.shape_key_tools_split_active_pair")
 RegisteredOps = {}
 
+# Set by register() and unregister(), used by persistent application handlers to deactive as expected when the addon is unloaded
+AddonEnabled = False
+
 
 
 #
 #====================================================================================================
-#    Viewport visualization operator
+#    Helpers
 #====================================================================================================
 #
 
-### Starts the op if it isn't already running
-def StartViewportVisualizationOp(contextOverride=None):
-	clsBlId = "view3d.shape_key_tools_viewport_visuals"
+### Gets one of this addon's operator classes as specified by its bl_id
+def GetRegisteredOpClass(clsBlId):
+	global RegisteredOps
+	
 	if (clsBlId in RegisteredOps):
-		cls = RegisteredOps[clsBlId].OpClass # Because bpy.types.VIEW_3D_OT_ShapeKeyTools_ViewportVisuals is null for no good reason
-		if (cls.IsRunning == False):
-			if (contextOverride != None):
-				bpy.ops.view3d.shape_key_tools_viewport_visuals(contextOverride)
-			else:
-				bpy.ops.view3d.shape_key_tools_viewport_visuals()
+		return RegisteredOps[clsBlId].OpClass # We have to manually track our registered operators because bpy.types.<our operator class> is always null for no good reason
 
 
-### Create a watcher for the blend file load event so we can start the op if a blend file was saved with it enabled
+
+#
+#====================================================================================================
+#    Background modal operators
+#====================================================================================================
+#
+
+##
+## Viewport-related background ops
+##
+
+def StartViewportVisualizationOp(contextOverride=None):
+	opCls = GetRegisteredOpClass("view3d.shape_key_tools_viewport_visuals")
+	if (opCls.IsRunning == False):
+		if (contextOverride != None):
+			bpy.ops.view3d.shape_key_tools_viewport_visuals(contextOverride)
+		else:
+			bpy.ops.view3d.shape_key_tools_viewport_visuals()
+
+def StartSplitPairPreviewOp(contextOverride=None):
+	opCls = GetRegisteredOpClass("view3d.shape_key_tools_splitpair_preview")
+	if (opCls.InstanceInfo == None):
+		if (contextOverride != None):
+			bpy.ops.view3d.shape_key_tools_splitpair_preview(contextOverride)
+		else:
+			bpy.ops.view3d.shape_key_tools_splitpair_preview()
+
+
+### Create a watcher for the blend file load event so we can start background ops if a blend file was saved with any enabled
 @persistent
 def BlendFileOpenedWatcher(dummy):
-	try:
-		scene = bpy.context.scene
-		properties = scene.shape_key_tools_props
-		if (properties.opt_shapepairs_splitmerge_viewportvisualize):
-			# Because there is no way to get the context of the viewport control, we have to make it ourselves... grrr
-			# Reference: https://b3d.interplanety.org/en/context-override/
-			areas = [area for area in bpy.context.screen.areas if area.type == "VIEW_3D"]
-			if (len(areas) > 0):
-				area = areas[0]
-				contextOverride = bpy.context.copy()
-				contextOverride["window"] = bpy.context.window
-				contextOverride["screen"] = bpy.context.screen
-				contextOverride["scene"] = bpy.context.scene
-				contextOverride["area"] = area
-				contextOverride["region"] = area.regions[-1]
-				contextOverride["space_data"] = area.spaces.active
-				StartViewportVisualizationOp(contextOverride)
+	try: # All of this is dangerous since we cannot assume anything about the user's actions or intent when this is raised
+		if (AddonEnabled):
+			scene = bpy.context.scene
+			properties = scene.shape_key_tools_props
+			
+			runViewportVisualizer = properties.opt_shapepairs_splitmerge_viewportvisualize
+			runSplitPairPreview = (properties.opt_shapepairs_splitmerge_preview_split_left or properties.opt_shapepairs_splitmerge_preview_split_right)
+			
+			overrideContext = None
+			if (runViewportVisualizer or runSplitPairPreview):
+				# Because there is no way to get the context of the viewport control, we have to make it ourselves... grrr
+				# Reference: https://b3d.interplanety.org/en/context-override/
+				areas = [area for area in bpy.context.screen.areas if area.type == "VIEW_3D"]
+				if (len(areas) > 0):
+					area = areas[0]
+					overrideContext = bpy.context.copy()
+					overrideContext["window"] = bpy.context.window
+					overrideContext["screen"] = bpy.context.screen
+					overrideContext["scene"] = bpy.context.scene
+					overrideContext["area"] = area
+					overrideContext["region"] = area.regions[-1]
+					overrideContext["space_data"] = area.spaces.active
+			
+			if (runViewportVisualizer):
+				try:
+					StartViewportVisualizationOp(overrideContext)
+				except:
+					pass
+			
+			if (runSplitPairPreview):
+				try:
+					StartSplitPairPreviewOp(overrideContext)
+				except:
+					pass
 	except:
 		pass
 bpy.app.handlers.load_post.append(BlendFileOpenedWatcher)
@@ -263,6 +307,28 @@ class ShapeKeyTools_Properties(bpy.types.PropertyGroup):
 		description = "Shows the region where the split shape keys will be cross-blended when Split Mode is set to Smooth",
 		default = True,
 	)
+	
+	def inputSplitPairPreviewLeftChanged(self, context):
+		if (self.opt_shapepairs_splitmerge_preview_split_left):
+			self.opt_shapepairs_splitmerge_preview_split_right = False
+			StartSplitPairPreviewOp()
+	opt_shapepairs_splitmerge_preview_split_left = BoolProperty(
+		name = "L",
+		description = "Live preview the result of the Split Active Shape Key operator. Change the split options with realtime feedback in the viewport",
+		default = False,
+		update = inputSplitPairPreviewLeftChanged,
+	)
+	
+	def inputSplitPairPreviewRightChanged(self, context):
+		if (self.opt_shapepairs_splitmerge_preview_split_right):
+			self.opt_shapepairs_splitmerge_preview_split_left = False
+			StartSplitPairPreviewOp()
+	opt_shapepairs_splitmerge_preview_split_right = BoolProperty(
+		name = "R",
+		description = "Live preview the result of the Split Active Shape Key operator. Change the split options with realtime feedback in the viewport",
+		default = False,
+		update = inputSplitPairPreviewRightChanged,
+	)
 
 
 
@@ -395,6 +461,12 @@ class OBJECT_PT_ShapeKeyTools_Panel(bpy.types.Panel):
 					g1sg1BodyRow8a = g1sg1BodyRow8.row()
 					g1sg1BodyRow8a.prop(properties, "opt_shapepairs_splitmerge_viewportvisualize_show_smoothregion")
 					g1sg1BodyRow8a.enabled = properties.opt_gui_enabler_shapepairs_split_smoothdist
+				# Split mesh preview
+				g1sg1BodyRow9 = g1sg1Body.row()
+				g1sg1BodyRow9.alignment = 'LEFT'
+				g1sg1BodyRow9.label("Preview Split:")
+				g1sg1BodyRow9.prop(properties, "opt_shapepairs_splitmerge_preview_split_left")
+				g1sg1BodyRow9.prop(properties, "opt_shapepairs_splitmerge_preview_split_right")
 			# Operators
 			g1Body.operator("wm.shape_key_tools_split_active_pair", icon_value=UiIconsExtra["arrow_divide"].icon_id)
 			g1Body.operator("wm.shape_key_tools_split_all_pairs", icon_value=UiIconsExtra["arrow_divide"].icon_id)
@@ -508,6 +580,10 @@ class OBJECT_PT_ShapeKeyTools_Panel(bpy.types.Panel):
 
 def register():
 	global UiIconsExtra
+	global RegisteredOps
+	global AddonEnabled
+	
+	AddonEnabled = True
 	
 	# Custom icons
 	UiIconsExtra = bpy.utils.previews.new()
@@ -534,6 +610,10 @@ def register():
 
 def unregister():
 	global UiIconsExtra
+	global RegisteredOps
+	global AddonEnabled
+	
+	AddonEnabled = False
 	
 	bpy.utils.previews.remove(UiIconsExtra)
 	

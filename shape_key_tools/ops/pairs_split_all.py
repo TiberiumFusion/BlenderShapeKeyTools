@@ -13,6 +13,19 @@ class WM_OT_ShapeKeyTools_OpSplitAllPairs(bpy.types.Operator):
 	bl_options = {"UNDO"}
 	
 	
+	opt_delete_originals = BoolProperty(
+		name = "Delete Original Shape Keys",
+		description = "Delete the original shape keys after creating each pair of new split shape keys.",
+		default = True,
+	)
+	
+	opt_clear_preview = BoolProperty(
+		name = "Clear Live Preview if Enabled",
+		description = "Disable the pair split preview after splitting if it is currently enabled.",
+		default = True,
+	)
+	
+	
 	# report() doesnt print to console when running inside modal() for some weird reason
 	# So we have to do that manually
 	def preport(self, message):
@@ -97,6 +110,11 @@ class WM_OT_ShapeKeyTools_OpSplitAllPairs(bpy.types.Operator):
 			self._TotalVerts = len(obj.data.vertices) * len(self._SplitBatch)
 			self._ModalWorkPacing = 0
 			
+			# If the user was previewing this split, disable the preview now
+			if (self.opt_clear_preview):
+				properties.opt_shapepairs_splitmerge_preview_split_left = False
+				properties.opt_shapepairs_splitmerge_preview_split_right = False
+			
 			context.window_manager.modal_handler_add(self)
 			self._Timer = context.window_manager.event_timer_add(0.1, context.window)
 			context.window_manager.progress_begin(0, self._TotalVerts)
@@ -133,7 +151,7 @@ class WM_OT_ShapeKeyTools_OpSplitAllPairs(bpy.types.Operator):
 				
 				# Make the victim shape key active and split it
 				obj.active_shape_key_index = obj.data.shape_keys.key_blocks.keys().index(oldName)
-				common.SplitPairActiveShapeKey(obj, axis, splitLName, splitRName, smoothingDistance, asyncProgressReporting=asyncProgressReporting)
+				common.SplitPairActiveShapeKey(obj, axis, splitLName, splitRName, smoothingDistance, self.opt_delete_originals, asyncProgressReporting=asyncProgressReporting)
 				
 				# Finalize this segment of the async work
 				self._CurVert = asyncProgressReporting["CurrentVert"]
@@ -145,6 +163,7 @@ class WM_OT_ShapeKeyTools_OpSplitAllPairs(bpy.types.Operator):
 					self.cancel(context)
 					self.preport("All shape keys pairs split.")
 					return {"CANCELLED"}
+				
 				#else: # Need to do more work in the next modal
 				
 			#else: # rest
