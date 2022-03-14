@@ -57,6 +57,7 @@ class WM_OT_ShapeKeyTools_OpMergeAllPairs(bpy.types.Operator):
 	
 	_Obj = None
 	_MergeAxis = None
+	_MergeMode = None
 	_MergeBatch = []
 	_CurBatchNum = 0
 	_CurVert = 0
@@ -92,6 +93,7 @@ class WM_OT_ShapeKeyTools_OpMergeAllPairs(bpy.types.Operator):
 		if (len(self._MergeBatch) > 0):
 			self._Obj = obj
 			self._MergeAxis = properties.opt_shapepairs_split_axis
+			self._MergeMode = properties.opt_shapepairs_merge_mode
 			self._CurBatchNum = 0
 			self._CurVert = 0
 			self._TotalVerts = len(obj.data.vertices) * len(self._MergeBatch)
@@ -124,6 +126,7 @@ class WM_OT_ShapeKeyTools_OpMergeAllPairs(bpy.types.Operator):
 				# Persistent parameters for all shape key merges
 				obj = self._Obj
 				axis = self._MergeAxis
+				mergeMode = self._MergeMode
 				
 				# Create async progress reporting data so the merge method can report progress to the window manager's progress cursor
 				asyncProgressReporting = {
@@ -132,7 +135,7 @@ class WM_OT_ShapeKeyTools_OpMergeAllPairs(bpy.types.Operator):
 				}
 				
 				# Merge the two victim shape keys
-				common.MergeShapeKeyPair(obj, axis, leftKey, rightKey, mergedName, asyncProgressReporting=asyncProgressReporting)
+				common.MergeShapeKeyPair(obj, axis, leftKey, rightKey, mergedName, mergeMode, asyncProgressReporting=asyncProgressReporting)
 				
 				# Finalize this segment of the async work
 				self._CurVert = asyncProgressReporting["CurrentVert"]

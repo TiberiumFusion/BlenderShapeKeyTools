@@ -5,8 +5,20 @@
 # //
 # ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-import sys, os
+import sys, os, math, mathutils
 import bpy
+
+
+#
+#====================================================================================================
+#    Helpers
+#====================================================================================================
+#
+
+### Simple bezier interpolation for values in 0-1
+def InterpBezier(x):
+	return (3.0 * x * x) - (2.0 * x * x * x)
+
 
 
 #
@@ -110,8 +122,9 @@ def FindShapeKeyPairSplitNames(originalShapeKeyName, validateWith=None):
 # - optAxis: The world axis which determines which verts go into the "left" and "right" halves
 # - newLeftName: Name for the newly split-off left side shape key
 # - newRightName: Name for the newly split-off right side shape key
+# - (optional) smoothDistance: Distance in world space from the origin of the split axis to crossblend the split shape keys 
 # - (optional) asyncProgressReporting: An object provided by __init__ for asynchronous operation (i.e. in a modal)
-def SplitPairActiveShapeKey(obj, optAxis, newLeftName, newRightName, asyncProgressReporting=None):
+def SplitPairActiveShapeKey(obj, optAxis, newLeftName, newRightName, smoothDistance=0, asyncProgressReporting=None):
 	originalShapeKeyName = obj.active_shape_key.name
 	originalShapeKeyIndex = obj.data.shape_keys.key_blocks.keys().index(originalShapeKeyName)
 	
@@ -149,8 +162,16 @@ def SplitPairActiveShapeKey(obj, optAxis, newLeftName, newRightName, asyncProgre
 		totalVerts = asyncProgressReporting["TotalVerts"]
 	
 	basisShapeKeyVerts = obj.data.shape_keys.key_blocks[0].data
+	originalShapeKeyVerts = obj.data.shape_keys.key_blocks[originalShapeKeyIndex].data
 	leftShapeKeyVerts = obj.data.shape_keys.key_blocks[newLeftShapeKeyIndex].data
 	rightShapeKeyVerts = obj.data.shape_keys.key_blocks[newRightShapeKeyIndex].data
+	
+	'''
+	# When the L/R crossfade is enabled, we cannot modify the shape key data blocks in-place, so we need a copy the shape key deltas
+	shapeKeyDeltas = []
+	if (smoothDistance > 0):
+		for vert in leftShapeKey
+	'''
 	
 	for vert in obj.data.vertices:
 		if reportAsyncProgress:
@@ -158,22 +179,41 @@ def SplitPairActiveShapeKey(obj, optAxis, newLeftName, newRightName, asyncProgre
 			if (currentVert % 100 == 0): # Only break for the UI thread every 100 verts. I'm not sure how much of a performance hit progress_update() incurs, but there's no need to call it faster than 60Hz.
 				wm.progress_update(currentVert)
 		
+		basisVertPos = basisShapeKeyVerts[vert.index].co
+		
 		# The coordinate of the vert on the basis shape key determines whether it is a left (+aXis) or right (-aXis) vert
 		axisSplitCoord = 0
 		if (axis == 0):
-			axisSplitCoord = basisShapeKeyVerts[vert.index].co.x
+			axisSplitCoord = basisVertPos.x
 		elif (axis == 1):
-			axisSplitCoord = basisShapeKeyVerts[vert.index].co.y
+			axisSplitCoord = basisVertPos.y
 		elif (axis == 2):
-			axisSplitCoord = basisShapeKeyVerts[vert.index].co.z
+			axisSplitCoord = basisVertPos.z
 		axisSplitCoord *= axisFlip
 		
-		# Neutralize the verts on the +aXis side (left side) for the right shape key
-		if (axisSplitCoord < 0):
-			leftShapeKeyVerts[vert.index].co = basisShapeKeyVerts[vert.index].co * 1
-		# Neutralize the verts on the -aXis side (right side) for the left shape key
-		if (axisSplitCoord >= 0):
-			rightShapeKeyVerts[vert.index].co = basisShapeKeyVerts[vert.index].co * 1
+		# if axisSplitCoord < 0: this vert is on the right side
+		# if axisSplitCoord == 0: this vert is exactly on the middle of the split axis
+		# if axisSplitCoord > 0: this vert is on the left side
+		
+		# Both the left and right shape keys are identical and start out with all deltas from both sides
+		# So we are removing deltas from one side or the other instead of adding them in order to achieve the two split shape keys
+		
+		if (axisSplitCoord < 0): # Vert is on the right side
+			if (axisSplitCoord < -smoothDistance or smoothDistance == 0): # Vert is outside of the smoothing radius or smoothing is disabled, so no crossfade
+				leftShapeKeyVerts[vert.index].co = basisVertPos * 1 # Remove this (right side) delta from the left shape key
+			else: # Vert is inside the smoothing radius, so factor the deltas for both the left and right shape keys to achieve the crossfade
+				leftShapeKeyVerts[vert.index].co = basisVertPos * 1 # Remove this (right side) delta from the left shape key
+				t = InterpBezier((smoothDistance - axisSplitCoord) / (2.0 * smoothDistance))
+				rightShapeKeyVerts[vert.index].co = basisVertPos.lerp(originalShapeKeyVerts[vert.index].co, t)
+				leftShapeKeyVerts[vert.index].co = basisVertPos.lerp(originalShapeKeyVerts[vert.index].co, 1.0 - t)
+		
+		elif (axisSplitCoord >= 0): # Vert is on the left side (or center)
+			if (axisSplitCoord > smoothDistance or smoothDistance == 0): # Vert is outside of the smoothing radius or smoothing is disabled, so no crossfade
+				rightShapeKeyVerts[vert.index].co = basisVertPos * 1 # Remove this (left side) delta from the right shape key
+			else: # Vert is inside the smoothing radius, so factor the deltas for both the left and right shape keys to achieve the crossfade
+				t = InterpBezier((smoothDistance - axisSplitCoord) / (2.0 * smoothDistance))
+				leftShapeKeyVerts[vert.index].co = basisVertPos.lerp(originalShapeKeyVerts[vert.index].co, 1.0 - t)
+				rightShapeKeyVerts[vert.index].co = basisVertPos.lerp(originalShapeKeyVerts[vert.index].co, t)
 			
 	# Move the two copies in the shape key list to sit after the original shape key
 	while (newLeftShapeKeyIndex > originalShapeKeyIndex + 1):
@@ -224,9 +264,10 @@ def FindShapeKeyMergeNames(shapeKeyName, validateWith=None):
 # - shapeKeyLeftName: Name of the "left" side shape key to be merged
 # - shapeKeyRightName: Name of the "right" side shape key to be merged
 # - mergedShapeKeyName: Name of the soon-to-be merged shape key
+# - mode: Name of the mode to use for merging the left and right deltas
 # - (optional) deleteInputShapeKeys: Defaults to delete the left and right shape keys creating the new merged key
 # - (optional) asyncProgressReporting: An object provided by __init__ for asynchronous operation (i.e. in a modal)
-def MergeShapeKeyPair(obj, optAxis, shapeKeyLeftName, shapeKeyRightName, mergedShapeKeyName, deleteInputShapeKeys=True, asyncProgressReporting=None):
+def MergeShapeKeyPair(obj, optAxis, shapeKeyLeftName, shapeKeyRightName, mergedShapeKeyName, mode, deleteInputShapeKeys=True, asyncProgressReporting=None):
 	# Find the indices of the left and right shape keys
 	leftShapeKeyIndex = obj.data.shape_keys.key_blocks.keys().index(shapeKeyLeftName)
 	rightShapeKeyIndex = obj.data.shape_keys.key_blocks.keys().index(shapeKeyRightName)
@@ -287,21 +328,30 @@ def MergeShapeKeyPair(obj, optAxis, shapeKeyLeftName, shapeKeyRightName, mergedS
 			if (currentVert % 100 == 0):
 				wm.progress_update(currentVert)
 		
+		baseVertPos = basisShapeKeyVerts[vert.index].co
+		
 		axisSplitCoord = 0
 		if (axis == 0):
-			axisSplitCoord = basisShapeKeyVerts[vert.index].co.x
+			axisSplitCoord = baseVertPos.x
 		elif (axis == 1):
-			axisSplitCoord = basisShapeKeyVerts[vert.index].co.y
+			axisSplitCoord = baseVertPos.y
 		elif (axis == 2):
-			axisSplitCoord = basisShapeKeyVerts[vert.index].co.z
+			axisSplitCoord = baseVertPos.z
 		axisSplitCoord *= axisFlip
 		
-		# If the original vert is -aXis (right side), then we pick the flexed vert from the Right shape key
-		if (axisSplitCoord < 0):
-			mergedShapeKeyVerts[vert.index].co = rightShapeKeyVerts[vert.index].co * 1
-		# If the original vert is +aXis (left side), then we pick the flexed vert from the Left shape key
-		if (axisSplitCoord >= 0):
-			mergedShapeKeyVerts[vert.index].co = leftShapeKeyVerts[vert.index].co * 1
+		if (mode == "overwrite"):	
+			# If the original vert is -aXis (right side), then we pick the flexed vert from the Right shape key
+			if (axisSplitCoord < 0):
+				mergedShapeKeyVerts[vert.index].co = rightShapeKeyVerts[vert.index].co * 1
+			# If the original vert is +aXis (left side), then we pick the flexed vert from the Left shape key
+			if (axisSplitCoord >= 0):
+				mergedShapeKeyVerts[vert.index].co = leftShapeKeyVerts[vert.index].co * 1
+		
+		elif (mode == "additive"):
+			# Add the deltas of both the left and right halves together
+			leftDelta = leftShapeKeyVerts[vert.index].co - baseVertPos
+			rightDelta = rightShapeKeyVerts[vert.index].co - baseVertPos
+			mergedShapeKeyVerts[vert.index].co = baseVertPos + leftDelta + rightDelta
 	
 	# Restore relative_key for the two input shape keys if necessary
 	if (leftOldBasisKey != key0):

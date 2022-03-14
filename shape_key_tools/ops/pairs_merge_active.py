@@ -73,9 +73,9 @@ class WM_OT_ShapeKeyTools_OpMergeActive(bpy.types.Operator):
 		
 		# Merge em
 		if (firstShapeKey[-1] == "L"):
-			common.MergeShapeKeyPair(obj, properties.opt_shapepairs_split_axis, firstShapeKey, expectedCompShapeKey, mergedShapeKey)
+			common.MergeShapeKeyPair(obj, properties.opt_shapepairs_split_axis, firstShapeKey, expectedCompShapeKey, mergedShapeKey, properties.opt_shapepairs_merge_mode)
 		else:
-			common.MergeShapeKeyPair(obj, properties.opt_shapepairs_split_axis, expectedCompShapeKey, firstShapeKey, mergedShapeKey)
+			common.MergeShapeKeyPair(obj, properties.opt_shapepairs_split_axis, expectedCompShapeKey, firstShapeKey, mergedShapeKey, properties.opt_shapepairs_merge_mode)
 		self.report({'INFO'}, "Merged shape key '" + firstShapeKey + "' with '"  + expectedCompShapeKey + "' to create new '" + mergedShapeKey + "'")
 		
 		return {'FINISHED'}

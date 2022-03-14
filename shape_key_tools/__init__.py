@@ -11,7 +11,7 @@
 bl_info = {
 	"name": "Shape Key Tools",
 	"author": "TiberiumFusion",  
-	"version": (2, 1, 1, 0),
+	"version": (2, 2, 0, 0),
 	"blender": (2, 78, 0), # This is a guess... I think it was 2.77 or 2.78 that added some of the operators/api we need. Definitely no earlier than 2.75, since that is when support for custom icons was added.
 	"location": "Object > Tools > Shape Key Tools",
 	"description": "Tools for working with shape keys beyond Blender's limited abilities.",
@@ -26,6 +26,7 @@ from types import SimpleNamespace
 
 import bpy, bpy.utils.previews
 from bpy.props import *
+from bpy.app.handlers import persistent
 
 from . import common
 
@@ -40,13 +41,61 @@ RegisteredOps = {}
 
 #
 #====================================================================================================
+#    Viewport visualization operator
+#====================================================================================================
+#
+
+### Starts the op if it isn't already running
+def StartViewportVisualizationOp(contextOverride=None):
+	clsBlId = "view3d.shape_key_tools_viewport_visuals"
+	if (clsBlId in RegisteredOps):
+		cls = RegisteredOps[clsBlId].OpClass # Because bpy.types.VIEW_3D_OT_ShapeKeyTools_ViewportVisuals is null for no good reason
+		if (cls.IsRunning == False):
+			if (contextOverride != None):
+				bpy.ops.view3d.shape_key_tools_viewport_visuals(contextOverride)
+			else:
+				bpy.ops.view3d.shape_key_tools_viewport_visuals()
+
+
+### Create a watcher for the blend file load event so we can start the op if a blend file was saved with it enabled
+@persistent
+def BlendFileOpenedWatcher(dummy):
+	try:
+		scene = bpy.context.scene
+		properties = scene.shape_key_tools_props
+		if (properties.opt_shapepairs_splitmerge_viewportvisualize):
+			# Because there is no way to get the context of the viewport control, we have to make it ourselves... grrr
+			# Reference: https://b3d.interplanety.org/en/context-override/
+			areas = [area for area in bpy.context.screen.areas if area.type == "VIEW_3D"]
+			if (len(areas) > 0):
+				area = areas[0]
+				contextOverride = bpy.context.copy()
+				contextOverride["window"] = bpy.context.window
+				contextOverride["screen"] = bpy.context.screen
+				contextOverride["scene"] = bpy.context.scene
+				contextOverride["area"] = area
+				contextOverride["region"] = area.regions[-1]
+				contextOverride["space_data"] = area.spaces.active
+				StartViewportVisualizationOp(contextOverride)
+	except:
+		pass
+bpy.app.handlers.load_post.append(BlendFileOpenedWatcher)
+
+
+
+#
+#====================================================================================================
 #    Top level properties
 #====================================================================================================
 #
 
 class ShapeKeyTools_Properties(bpy.types.PropertyGroup):
 	
-	### Gui glue
+	##
+	## UI glue
+	##
+	
+	### Subpanel expanders
 	opt_gui_subpanel_expander_globalopts = BoolProperty(name="Global Options", default=False, description="These options are shared by all operations, but some operations may not use them. Read each operation's tooltip for more info!")
 	opt_gui_subpanel_expander_shapepairs = BoolProperty(name="Split/Merge Pairs", default=True, description="Operations for splitting and merging shape key pairs (i.e. symmetrical shape keys, like facial expressions)")
 	opt_gui_subpanel_expander_shapepairsopts = BoolProperty(name="Split/Merge Pairs Options", default=True, description="These options ONLY affect the 4 operations below")
@@ -54,7 +103,14 @@ class ShapeKeyTools_Properties(bpy.types.PropertyGroup):
 	opt_gui_subpanel_expander_modifiers = BoolProperty(name="Modifer Operations", default=True, description="Operations involving shape keys and modifiers")
 	opt_gui_subpanel_expander_info = BoolProperty(name="Info", default=True, description="Miscellaneous information on the active object's shape keys")
 	
-	### Global options for all ops
+	### Helpers for enabling/disabling controls based on other controls
+	opt_gui_enabler_shapepairs_split_smoothdist = BoolProperty(name="", default=False, description="For internal addon use only.")
+	
+	
+	##
+	## Global options for all ops
+	##
+	
 	opt_global_enable_filterverts = BoolProperty(
 		name = "Vertex Filter",
 		description = "Filter shape key vertices by comparing them with the conditions below. Vertices that pass ALL conditions are considered RED. All other vertices are considered BLACK. Each operation may treat RED and BLACK vertices DIFFERENTLY, so read every tooltip!",
@@ -129,7 +185,11 @@ class ShapeKeyTools_Properties(bpy.types.PropertyGroup):
 			params["VertexGroupIndex"] = self.opt_global_filterverts_vertexgroup
 		return params
 	
-	### Local options for shape key pairs split & merge
+	
+	##
+	## Local options for shape key pairs split & merge
+	##
+	
 	opt_shapepairs_split_axis = EnumProperty(
 		name = "",
 		description = "World axis for splitting/merging shape keys into 'left' and 'right' halves.",
@@ -141,6 +201,67 @@ class ShapeKeyTools_Properties(bpy.types.PropertyGroup):
 			("-Y", "-Y", "Split/merge shape keys into a -Y half ('left') and a +Y half ('right'), using the XZ world plane. Pick this if your character faces -X.", "AXIS_FRONT", 5),
 			("-Z", "-Z", "Split/merge shape keys into a -Z half ('left') and a +Z half ('right'), using the XY world plane.", "AXIS_TOP", 6),
 		]
+	)
+	
+	def inputShapePairsSplitModeChanged(self, context):
+		if (self.opt_shapepairs_split_mode == "smooth"):
+			self.opt_gui_enabler_shapepairs_split_smoothdist = True
+		else:
+			self.opt_gui_enabler_shapepairs_split_smoothdist = False
+	opt_shapepairs_split_mode = EnumProperty(
+		name = "",
+		description = "Method for determing the per-side deltas when splitting shape keys into 'left' and 'right' halves.",
+		items = [
+			("sharp", "Sharp", "Sharp divide. No smoothing between the split left and right halves. Useful for shape keys that have distinct halves and do not connect in the center, like eye shapes."),
+			("smooth", "Smooth", "Smoothed divide. The left and right halves are crossfaded within the specified Smoothing Distance. Useful for shape keys that connect in the center, like mouth shapes."),
+		],
+		update = inputShapePairsSplitModeChanged,
+	)
+	
+	opt_shapepairs_split_smoothdist = FloatProperty(
+		name = "Smoothing Distance",
+		description = "Only used by Smooth Split Mode. Radius (in worldspace) from the center of split axis that defines the region in which the left and right halves of the shape key are smoothed when split. Smoothing uses simple bezier interpolation",
+		min = 0.0,
+		soft_min = 0.0,
+		soft_max = 100.0,
+		default = 1.0,
+		precision = 2,
+		step = 0.1,
+		subtype = 'DISTANCE',
+		unit = 'LENGTH',
+	)
+	
+	opt_shapepairs_merge_mode = EnumProperty(
+		name = "",
+		description = "Method for combining left and right shape keys together.",
+		items = [
+			("additive", "Additive", "All deltas from both shape keys will be added together. This mode is suitable if you previously split the shape key with either the 'Smooth' or 'Sharp' mode."),
+			("overwrite", "Overwrite", "Only the deltas from the left side of the left shape key and the right side of the right shape key will be used. This mode is only suitable if you previously split the shape key with 'Sharp' mode."),
+		],
+	)
+	
+	def inputShapePairsVisualizeSplitMergeAxisChanged(self, context):
+		StartViewportVisualizationOp()
+	opt_shapepairs_splitmerge_viewportvisualize = BoolProperty(
+		name = "Visualize Split/Merge Regions",
+		description = "Draws an overlay in the viewport that represents the current split/merge parameters",
+		default = False,
+		update = inputShapePairsVisualizeSplitMergeAxisChanged,
+	)
+	opt_shapepairs_splitmerge_viewportvisualize_show_splitplane = BoolProperty(
+		name = "Show Split Plane",
+		description = "Show the world plane that will bisect the shape keys",
+		default = True,
+	)
+	opt_shapepairs_splitmerge_viewportvisualize_show_splithalves = BoolProperty(
+		name = "Show Halves",
+		description = "Shows the left and right sides of the split plane",
+		default = True,
+	)
+	opt_shapepairs_splitmerge_viewportvisualize_show_smoothregion = BoolProperty(
+		name = "Show Smoothing Region",
+		description = "Shows the region where the split shape keys will be cross-blended when Split Mode is set to Smooth",
+		default = True,
 	)
 
 
@@ -236,9 +357,44 @@ class OBJECT_PT_ShapeKeyTools_Panel(bpy.types.Panel):
 			g1sg1Header.prop(properties, "opt_gui_subpanel_expander_shapepairsopts", text="Options", icon=("TRIA_DOWN" if properties.opt_gui_subpanel_expander_shapepairsopts else "TRIA_RIGHT"), emboss=False, expand=False)
 			if (properties.opt_gui_subpanel_expander_shapepairsopts):
 				g1sg1Body = g1sg1Col.column()
+				# Split axis
 				g1sg1BodyRow1 = g1sg1Body.row()
 				g1sg1BodyRow1.label("Split Axis:")
 				g1sg1BodyRow1.prop(properties, "opt_shapepairs_split_axis", text="")
+				# Split mode
+				g1sg1BodyRow2 = g1sg1Body.row()
+				g1sg1BodyRow2.label("Split Mode:")
+				g1sg1BodyRow2.prop(properties, "opt_shapepairs_split_mode", text="")
+				# Smoothing factor
+				g1sg1BodyRow3 = g1sg1Body.row()
+				g1sg1BodyRow3.prop(properties, "opt_shapepairs_split_smoothdist")
+				g1sg1BodyRow3.enabled = properties.opt_gui_enabler_shapepairs_split_smoothdist
+				# Merge mode
+				g1sg1BodyRow4 = g1sg1Body.row()
+				g1sg1BodyRow4.label("Merge Mode:")
+				g1sg1BodyRow4.prop(properties, "opt_shapepairs_merge_mode", text="")
+				### Split/merge visualization
+				# Master show/hide
+				g1sg1BodyRow5 = g1sg1Body.row()
+				g1sg1BodyRow5.prop(properties, "opt_shapepairs_splitmerge_viewportvisualize")
+				if (properties.opt_shapepairs_splitmerge_viewportvisualize):
+					# Show split plane
+					g1sg1BodyRow6 = g1sg1Body.row()
+					g1sg1BodyRow6.separator()
+					g1sg1BodyRow6.prop(properties, "opt_shapepairs_splitmerge_viewportvisualize_show_splitplane")
+					g1sg1BodyRow6.enabled = properties.opt_shapepairs_splitmerge_viewportvisualize
+					# Show split halves
+					g1sg1BodyRow7 = g1sg1Body.row()
+					g1sg1BodyRow7.separator()
+					g1sg1BodyRow7.prop(properties, "opt_shapepairs_splitmerge_viewportvisualize_show_splithalves")
+					g1sg1BodyRow7.enabled = properties.opt_shapepairs_splitmerge_viewportvisualize
+					# Show smoothing region
+					g1sg1BodyRow8 = g1sg1Body.row()
+					g1sg1BodyRow8.separator()
+					g1sg1BodyRow8.enabled = properties.opt_shapepairs_splitmerge_viewportvisualize
+					g1sg1BodyRow8a = g1sg1BodyRow8.row()
+					g1sg1BodyRow8a.prop(properties, "opt_shapepairs_splitmerge_viewportvisualize_show_smoothregion")
+					g1sg1BodyRow8a.enabled = properties.opt_gui_enabler_shapepairs_split_smoothdist
 			# Operators
 			g1Body.operator("wm.shape_key_tools_split_active_pair", icon_value=UiIconsExtra["arrow_divide"].icon_id)
 			g1Body.operator("wm.shape_key_tools_split_all_pairs", icon_value=UiIconsExtra["arrow_divide"].icon_id)

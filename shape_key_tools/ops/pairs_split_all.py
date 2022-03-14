@@ -57,6 +57,7 @@ class WM_OT_ShapeKeyTools_OpSplitAllPairs(bpy.types.Operator):
 	
 	_Obj = None
 	_SplitAxis = None
+	_SmoothingDistance = 0
 	_SplitBatch = []
 	_CurBatchNum = 0
 	_CurVert = 0
@@ -88,6 +89,9 @@ class WM_OT_ShapeKeyTools_OpSplitAllPairs(bpy.types.Operator):
 		if (len(self._SplitBatch) > 0):
 			self._Obj = obj
 			self._SplitAxis = properties.opt_shapepairs_split_axis
+			self._SmoothingDistance = properties.opt_shapepairs_split_smoothdist
+			if (properties.opt_shapepairs_split_mode == "sharp"):
+				self._SmoothingDistance = 0
 			self._CurBatchNum = 0
 			self._CurVert = 0
 			self._TotalVerts = len(obj.data.vertices) * len(self._SplitBatch)
@@ -119,6 +123,7 @@ class WM_OT_ShapeKeyTools_OpSplitAllPairs(bpy.types.Operator):
 			elif (self._ModalWorkPacing == 1): # work
 				# Persistent parameters for all shape key splits
 				axis = self._SplitAxis
+				smoothingDistance = self._SmoothingDistance
 				
 				# Create async progress reporting data so the split method can report progress to the window manager's progress cursor
 				asyncProgressReporting = {
@@ -128,7 +133,7 @@ class WM_OT_ShapeKeyTools_OpSplitAllPairs(bpy.types.Operator):
 				
 				# Make the victim shape key active and split it
 				obj.active_shape_key_index = obj.data.shape_keys.key_blocks.keys().index(oldName)
-				common.SplitPairActiveShapeKey(obj, axis, splitLName, splitRName, asyncProgressReporting=asyncProgressReporting)
+				common.SplitPairActiveShapeKey(obj, axis, splitLName, splitRName, smoothingDistance, asyncProgressReporting=asyncProgressReporting)
 				
 				# Finalize this segment of the async work
 				self._CurVert = asyncProgressReporting["CurrentVert"]

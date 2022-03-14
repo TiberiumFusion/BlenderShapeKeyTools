@@ -66,7 +66,10 @@ class WM_OT_ShapeKeyTools_OpSplitActivePair(bpy.types.Operator):
 			self.report({'INFO'}, "Shape key '" + obj.active_shape_key.name + "' does not use the 'MyShapeKeyL+MyShapeKeyR' naming convention!")
 		
 		# Split the active shape key
-		common.SplitPairActiveShapeKey(obj, properties.opt_shapepairs_split_axis, splitLName, splitRName)
+		smoothingDistance = properties.opt_shapepairs_split_smoothdist
+		if (properties.opt_shapepairs_split_mode == "sharp"):
+			smoothingDistance = 0
+		common.SplitPairActiveShapeKey(obj, properties.opt_shapepairs_split_axis, splitLName, splitRName, smoothingDistance)
 		self.report({'INFO'}, "Split shape key '" + oldName + "' into left: '"  + splitLName + "' and right: '" + splitRName + "'")
 		
 		return {'FINISHED'}
