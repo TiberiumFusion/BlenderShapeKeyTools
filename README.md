@@ -1,4 +1,4 @@
-<img align="right" src="github_media/oppanel_2200.png">
+<img align="right" src="github_media/oppanel_2201.png">
 
 # Shape Key Tools for Blender 2.79
 
