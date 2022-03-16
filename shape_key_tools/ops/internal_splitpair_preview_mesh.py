@@ -355,6 +355,9 @@ class VIEW_3D_OT_ShapeKeyTools_SplitPairPreview(bpy.types.Operator):
 				self.LastUsedSplitParams["opt_shapepairs_split_axis"] = properties.opt_shapepairs_split_axis
 				self.LastUsedSplitParams["opt_shapepairs_split_mode"] = properties.opt_shapepairs_split_mode
 				self.LastUsedSplitParams["opt_shapepairs_split_smoothdist"] = properties.opt_shapepairs_split_smoothdist
+				
+				# Reselect original mesh
+				singleSelect(self.OriginalMeshObject)
 			
 			# The user can swap between previewing the left or right split key, so keep that synced			
 			if (properties.opt_shapepairs_splitmerge_preview_split_left):
