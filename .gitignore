@@ -132,3 +132,6 @@ dmypy.json
 
 # Design-time materials
 Sources/
+
+# Local deployment tools
+Install to Blender Scripts Folder.bat
