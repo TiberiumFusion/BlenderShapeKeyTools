@@ -11,13 +11,21 @@ class WM_OT_ShapeKeyTools_OpMergeAllPairs(bpy.types.Operator):
 	bl_label = "Smart Merge All Shape Keys"
 	bl_description = "Merges all shape keys pairs on the active mesh into single left+right shape keys. Only shape keys that use the 'MyShapeKeyL' 'MyShapeKeyR' naming convention will be merged. This operation does NOT use the Vertex Filter!"
 	bl_options = {"UNDO"}
-
+	
+	
+	opt_run_async = BoolProperty(
+		name = "Run as Modal",
+		description = "When true, this modal operator runs normally (asynchronously). When false, this operator will block and run synchronously.",
+		default = True,
+	)
+	
 	
 	# report() doesnt print to console when running inside modal() for some weird reason
 	# So we have to do that manually
 	def preport(self, message):
 		print(message)
-		self.report({'INFO'}, message)
+		if (self.opt_run_async):
+			self.report({'INFO'}, message)
 		
 	
 	def validate(self, context):
@@ -65,6 +73,13 @@ class WM_OT_ShapeKeyTools_OpMergeAllPairs(bpy.types.Operator):
 	_ModalWorkPacing = 0
 	
 	
+	def invoke(self, context, event):
+		if (event.shift):
+			return context.window_manager.invoke_props_dialog(self, width=500)
+		else:
+			return self.execute(context)
+	
+	
 	def execute(self, context):
 		scene = context.scene
 		properties = scene.shape_key_tools_props
@@ -99,63 +114,76 @@ class WM_OT_ShapeKeyTools_OpMergeAllPairs(bpy.types.Operator):
 			self._TotalVerts = len(obj.data.vertices) * len(self._MergeBatch)
 			self._ModalWorkPacing = 0
 			
-			context.window_manager.modal_handler_add(self)
-			self._Timer = context.window_manager.event_timer_add(0.1, context.window)
+			self.preport("Preparing to merge " + str(len(self._MergeBatch) * 2) + " of " + str(len(obj.data.shape_keys.key_blocks)) + " total shape keys")
+			
 			context.window_manager.progress_begin(0, self._TotalVerts)
 			
-			self.report({'INFO'}, "Preparing to merge " + str(len(self._MergeBatch) * 2) + " of " + str(len(obj.data.shape_keys.key_blocks)) + " total shape keys")
-			return {"RUNNING_MODAL"}
+			if (self.opt_run_async):
+				context.window_manager.modal_handler_add(self)
+				self._Timer = context.window_manager.event_timer_add(0.1, context.window)
+				return {"RUNNING_MODAL"}
+			else:
+				modalComplete = None
+				while (not modalComplete):
+					modalComplete = self.modalStep(context)
+				return {"FINISHED"}
 			
 		else:
 			return {"FINISHED"}
 	
-	# Split one shape key at a time per modal event
+	# Merge one shape key at a time per modal event
 	def modal(self, context, event):
-		if event.type == "TIMER":
-			obj = self._Obj
-			
-			(leftKey, rightKey, mergedName) = self._MergeBatch[self._CurBatchNum]
-			
-			# If we do work every modal() event (or even every 2nd or 3rd), the Blender UI will not update
-			# So we always wait a few modal pulses after finishing the last work segment before doing the next work segment
-			if (self._ModalWorkPacing == 0): # notify
-				# The UI needs one full update cycle after self.report() to display it, so we do this one modal event *before* the actual work
-				self.preport("Merging shape key pair " + str(self._CurBatchNum + 1) + "/" + str(len(self._MergeBatch)) + " '" + leftKey + "' and '" + rightKey + "' into '" + mergedName + "'")
-				
-			elif (self._ModalWorkPacing == 1): # work
-				# Persistent parameters for all shape key merges
-				obj = self._Obj
-				axis = self._MergeAxis
-				mergeMode = self._MergeMode
-				
-				# Create async progress reporting data so the merge method can report progress to the window manager's progress cursor
-				asyncProgressReporting = {
-					"CurrentVert": self._CurVert,
-					"TotalVerts": self._TotalVerts,
-				}
-				
-				# Merge the two victim shape keys
-				common.MergeShapeKeyPair(obj, axis, leftKey, rightKey, mergedName, mergeMode, asyncProgressReporting=asyncProgressReporting)
-				
-				# Finalize this segment of the async work
-				self._CurVert = asyncProgressReporting["CurrentVert"]
-				self._CurBatchNum += 1
-				
-				if (self._CurBatchNum > len(self._MergeBatch) - 1):
-					# All work completed
-					bpy.context.window_manager.progress_end()
-					self.cancel(context)
-					self.preport("All shape keys pairs merged.")
-					return {"CANCELLED"}
-				#else: # Need to do more work in the next modal
-				
-			#else: # rest
-			
-			self._ModalWorkPacing += 1
-			if (self._ModalWorkPacing > 3):
-				self._ModalWorkPacing = 0
+		if (event.type == "TIMER"):
+			if (self.modalStep(context)): # modalStep only returns True when all work is done
+				return {"CANCELLED"}
+			else:
+				return {"PASS_THROUGH"}
 		
 		return {"PASS_THROUGH"}
+	
+	def modalStep(self, context):
+		obj = self._Obj
+		
+		(leftKey, rightKey, mergedName) = self._MergeBatch[self._CurBatchNum]
+		
+		# If we do work every modal() event (or even every 2nd or 3rd), the Blender UI will not update
+		# So we always wait a few modal pulses after finishing the last work segment before doing the next work segment
+		if (self._ModalWorkPacing == 0): # notify
+			# The UI needs one full update cycle after self.report() to display it, so we do this one modal event *before* the actual work
+			self.preport("Merging shape key pair " + str(self._CurBatchNum + 1) + "/" + str(len(self._MergeBatch)) + " '" + leftKey + "' and '" + rightKey + "' into '" + mergedName + "'")
+			
+		elif (self._ModalWorkPacing == 1): # work
+			# Persistent parameters for all shape key merges
+			obj = self._Obj
+			axis = self._MergeAxis
+			mergeMode = self._MergeMode
+			
+			# Create async progress reporting data so the merge method can report progress to the window manager's progress cursor
+			asyncProgressReporting = {
+				"CurrentVert": self._CurVert,
+				"TotalVerts": self._TotalVerts,
+			}
+			
+			# Merge the two victim shape keys
+			common.MergeShapeKeyPair(obj, axis, leftKey, rightKey, mergedName, mergeMode, asyncProgressReporting=asyncProgressReporting)
+			
+			# Finalize this segment of the async work
+			self._CurVert = asyncProgressReporting["CurrentVert"]
+			self._CurBatchNum += 1
+			
+			if (self._CurBatchNum > len(self._MergeBatch) - 1):
+				# All work completed
+				bpy.context.window_manager.progress_end()
+				self.cancel(context)
+				self.preport("All shape keys pairs merged.")
+				return True
+			#else: # Need to do more work in the next modal
+			
+		#else: # rest
+		
+		self._ModalWorkPacing += 1
+		if (self._ModalWorkPacing > 3):
+			self._ModalWorkPacing = 0
 	
 	def cancel(self, context):
 		if (self._Timer != None):
