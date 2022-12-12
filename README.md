@@ -1,4 +1,4 @@
-<img align="right" src="github_media/oppanel_2200.png">
+<img align="right" src="github_media/oppanel_2201.png">
 
 # Shape Key Tools for Blender 2.79
 
@@ -45,6 +45,6 @@ Split off a new shape key from an existing shape key, using various options to f
 Apply modifiers to meshes with shape keys, baking the modifier into both the base mesh and the shape key deltas.
 * Useful when you don't want to recreate 100 blend shapes just because Blender doesn't know how to deform shape keys.
 * Multiple modifiers can be applied at once, in stack order.
-* Only vertex-preserving modifiers are compatible. Modifiers which change topology or vertex count cannot be applied.
+* Only topology-preserving modifiers are compatible. Modifiers which change topology (incl. vertex count) cannot be applied.
 
 ![Demo5 gif](github_media/demovids/demo5.gif)
