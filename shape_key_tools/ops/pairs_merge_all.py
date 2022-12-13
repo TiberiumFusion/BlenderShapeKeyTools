@@ -120,7 +120,7 @@ class WM_OT_ShapeKeyTools_OpMergeAllPairs(bpy.types.Operator):
 			
 			if (self.opt_run_async):
 				context.window_manager.modal_handler_add(self)
-				self._Timer = context.window_manager.event_timer_add(0.1, context.window)
+				self._Timer = context.window_manager.event_timer_add(0.01, context.window)
 				return {"RUNNING_MODAL"}
 			else:
 				modalComplete = None

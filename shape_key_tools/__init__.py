@@ -11,9 +11,9 @@
 bl_info = {
 	"name": "Shape Key Tools",
 	"author": "TiberiumFusion",
-	"version": (2, 2, 1, 0),
+	"version": (2, 2, 1, 1),
 	"blender": (2, 78, 0), # This is a guess... I think it was 2.77 or 2.78 that added some of the operators/api we need. Definitely no earlier than 2.75, since that is when support for custom icons was added.
-	"location": "Object > Tools > Shape Key Tools",
+	"location": "View3D (Object Mode) > Tool Shelf > Tools > Shape Key Tools",
 	"description": "Tools for working with shape keys beyond Blender's limited abilities.",
 	"wiki_url": "https://github.com/TiberiumFusion/BlenderShapeKeyTools",
 	"tracker_url": "https://github.com/TiberiumFusion/BlenderShapeKeyTools/issues",
