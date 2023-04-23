@@ -504,7 +504,7 @@ def MergeAndBlendShapeKeys(obj, shapeKey1Name, shapeKey2Name, destination, blend
 			
 			# Divide
 			elif (blendMode == "divide"):
-				newDelta = lowerDelta * upperDelta
+				newDelta = lowerDelta / upperDelta
 				
 			# Overwrite
 			elif (blendMode == "over"):
